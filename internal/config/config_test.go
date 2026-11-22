@@ -10,6 +10,7 @@ func clearEnv(t *testing.T) {
 	for _, name := range []string{
 		EnvAddr, EnvPort, EnvDatabaseURL, EnvAppEnv, EnvServiceKeys, EnvAPIKey, EnvHashIDSalt,
 		EnvDBHost, EnvDBPort, EnvDBUser, EnvDBPassword, EnvDBName, EnvDBSSLMode,
+		EnvGeocoderURL, EnvAPIBrasilToken, EnvAPIBrasilURL, EnvAPIBrasilHomolog,
 	} {
 		t.Setenv(name, "")
 	}
@@ -234,5 +235,72 @@ func TestIsEnvSet(t *testing.T) {
 	}
 	if IsEnvSet("GMAPS_TEST_ABSENT_VARIABLE") {
 		t.Error("absent variable should not count as set")
+	}
+}
+
+func loadConfig(t *testing.T) *Config {
+	t.Helper()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return cfg
+}
+
+func TestGeocoderURLDefault(t *testing.T) {
+	clearEnv(t)
+	if got := loadConfig(t).GeocoderURL; got != DefaultGeocoderURL {
+		t.Fatalf("GeocoderURL = %q", got)
+	}
+}
+
+func TestGeocoderURLTrimsTrailingSlash(t *testing.T) {
+	clearEnv(t)
+	t.Setenv(EnvGeocoderURL, "http://localhost:9000/")
+	if got := loadConfig(t).GeocoderURL; got != "http://localhost:9000" {
+		t.Fatalf("GeocoderURL = %q", got)
+	}
+}
+
+func TestAPIBrasilTokenUnsetMeansNotConfigured(t *testing.T) {
+	clearEnv(t)
+	cfg := loadConfig(t)
+	if cfg.APIBrasilToken != "" || cfg.HasAPIBrasil() {
+		t.Fatalf("token = %q, configured = %v", cfg.APIBrasilToken, cfg.HasAPIBrasil())
+	}
+}
+
+func TestAPIBrasilTokenIsTrimmed(t *testing.T) {
+	clearEnv(t)
+	t.Setenv(EnvAPIBrasilToken, "  secret  ")
+	cfg := loadConfig(t)
+	if cfg.APIBrasilToken != "secret" || !cfg.HasAPIBrasil() {
+		t.Fatalf("token = %q, configured = %v", cfg.APIBrasilToken, cfg.HasAPIBrasil())
+	}
+}
+
+func TestAPIBrasilURLDefault(t *testing.T) {
+	clearEnv(t)
+	if got := loadConfig(t).APIBrasilURL; got != DefaultAPIBrasilURL {
+		t.Fatalf("APIBrasilURL = %q", got)
+	}
+}
+
+func TestAPIBrasilURLOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv(EnvAPIBrasilURL, "http://localhost:9100/")
+	if got := loadConfig(t).APIBrasilURL; got != "http://localhost:9100" {
+		t.Fatalf("APIBrasilURL = %q", got)
+	}
+}
+
+func TestAPIBrasilHomologParsing(t *testing.T) {
+	cases := map[string]bool{"": false, "false": false, "true": true, "1": true, "garbage": false}
+	for raw, want := range cases {
+		clearEnv(t)
+		t.Setenv(EnvAPIBrasilHomolog, raw)
+		if got := loadConfig(t).APIBrasilHomolog; got != want {
+			t.Errorf("APIBRASIL_HOMOLOG=%q: got %v, want %v", raw, got, want)
+		}
 	}
 }

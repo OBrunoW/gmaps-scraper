@@ -106,5 +106,5 @@ func newTestEnv(auth func(http.Handler) http.Handler) *testEnv {
 	if auth == nil {
 		auth = middleware.NoopAuth
 	}
-	return &testEnv{queue: queue, results: results, router: NewRouter(service, auth)}
+	return &testEnv{queue: queue, results: results, router: NewRouter(service, NewProspectorHandlers(&fakeProspector{}, nil, nil), auth)}
 }

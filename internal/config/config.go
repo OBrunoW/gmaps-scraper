@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,20 +14,28 @@ const (
 	DefaultAppEnv      = "development"
 	DefaultPort        = "8080"
 
-	EnvAddr         = "ADDR"
-	EnvPort         = "PORT"
-	EnvDatabaseURL  = "DATABASE_URL"
-	EnvAppEnv       = "APP_ENV"
-	EnvServiceKeys  = "SERVICE_KEYS"
-	EnvAPIKey       = "API_KEY"
-	EnvHashIDSalt   = "HASHID_SALT"
-	EnvDBHost       = "DB_HOST"
-	EnvDBPort       = "DB_PORT"
-	EnvDBUser       = "DB_USER"
-	EnvDBPassword   = "DB_PASSWORD"
-	EnvDBName       = "DB_NAME"
-	EnvDBSSLMode    = "DB_SSLMODE"
-	developmentName = "development"
+	DefaultGeocoderURL  = "https://nominatim.openstreetmap.org"
+	DefaultAPIBrasilURL = "https://gateway.apibrasil.io/api/v2"
+
+	EnvAddr        = "ADDR"
+	EnvPort        = "PORT"
+	EnvDatabaseURL = "DATABASE_URL"
+	EnvAppEnv      = "APP_ENV"
+	EnvServiceKeys = "SERVICE_KEYS"
+	EnvAPIKey      = "API_KEY"
+	EnvHashIDSalt  = "HASHID_SALT"
+	EnvDBHost      = "DB_HOST"
+	EnvDBPort      = "DB_PORT"
+	EnvDBUser      = "DB_USER"
+	EnvDBPassword  = "DB_PASSWORD"
+	EnvDBName      = "DB_NAME"
+	EnvDBSSLMode   = "DB_SSLMODE"
+
+	EnvGeocoderURL      = "PROSPECTOR_GEOCODER_URL"
+	EnvAPIBrasilToken   = "APIBRASIL_TOKEN"
+	EnvAPIBrasilURL     = "APIBRASIL_BASE_URL"
+	EnvAPIBrasilHomolog = "APIBRASIL_HOMOLOG"
+	developmentName     = "development"
 )
 
 var ErrAuthRequired = errors.New("SERVICE_KEYS or API_KEY is required outside development")
@@ -38,6 +47,11 @@ type Config struct {
 	ServiceKeys map[string]string
 	APIKey      string
 	HashIDSalt  string
+
+	GeocoderURL      string
+	APIBrasilToken   string
+	APIBrasilURL     string
+	APIBrasilHomolog bool
 }
 
 func Load() (*Config, error) {
@@ -48,6 +62,11 @@ func Load() (*Config, error) {
 		ServiceKeys: parseServiceKeys(os.Getenv(EnvServiceKeys)),
 		APIKey:      strings.TrimSpace(os.Getenv(EnvAPIKey)),
 		HashIDSalt:  envOr(EnvHashIDSalt, DefaultHashIDSalt),
+
+		GeocoderURL:      trimmedURL(EnvGeocoderURL, DefaultGeocoderURL),
+		APIBrasilToken:   strings.TrimSpace(os.Getenv(EnvAPIBrasilToken)),
+		APIBrasilURL:     trimmedURL(EnvAPIBrasilURL, DefaultAPIBrasilURL),
+		APIBrasilHomolog: parseBool(os.Getenv(EnvAPIBrasilHomolog)),
 	}
 
 	return cfg, nil
@@ -71,6 +90,10 @@ func (c *Config) HasAuthKeys() bool {
 
 func (c *Config) AllowNoopAuth() bool {
 	return c.IsDevelopment() && !c.HasAuthKeys()
+}
+
+func (c *Config) HasAPIBrasil() bool {
+	return c.APIBrasilToken != ""
 }
 
 func IsEnvSet(name string) bool {
@@ -141,4 +164,17 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func trimmedURL(key, fallback string) string {
+	value := strings.TrimRight(strings.TrimSpace(os.Getenv(key)), "/")
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func parseBool(raw string) bool {
+	value, err := strconv.ParseBool(strings.TrimSpace(raw))
+	return err == nil && value
 }

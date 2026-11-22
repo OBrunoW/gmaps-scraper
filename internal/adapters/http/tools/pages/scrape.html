@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scrape</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--text:#1c1f24;--muted:#5d6672;--border:#d5d9e0;--accent:#1a73e8;--accent-text:#fff;--danger:#c62828;--ok:#2e7d32;--code:#eef0f3}
+@media (prefers-color-scheme:dark){:root{--bg:#14161a;--panel:#1d2025;--text:#e6e8eb;--muted:#9aa3ae;--border:#343a42;--accent:#6ea8fe;--accent-text:#0b1220;--danger:#ef8a8a;--ok:#7fd48a;--code:#14161a}}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif;overflow-x:hidden}
+main{max-width:960px;margin:0 auto}
+h1{font-size:1.4rem;margin:0 0 4px}
+h2{font-size:1.05rem;margin:0 0 12px}
+nav{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+a{color:var(--accent)}
+.muted{color:var(--muted)}
+section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
+label.check{flex-direction:row;align-items:center;gap:8px;color:var(--text)}
+input,select{width:100%;min-width:0;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}
+input[type=checkbox]{width:auto}
+button{padding:8px 16px;border:0;border-radius:6px;background:var(--accent);color:var(--accent-text);font:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.actions{margin-top:12px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+pre{margin:0;padding:12px;background:var(--code);border-radius:6px;overflow:auto;max-height:360px;white-space:pre-wrap;word-break:break-word;font-size:.8rem}
+.error{color:var(--danger)}
+.ok{color:var(--ok)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top;word-break:break-word}
+ul{margin:0;padding-left:20px}
+</style>
+</head>
+<body>
+<main>
+<h1>Scrape</h1>
+<nav>
+<a href="scrape.html">Scrape</a>
+<a href="prospector.html">Prospector</a>
+<a href="lead-learning.html">Lead learning</a>
+</nav>
+<section>
+<h2>Configuração</h2>
+<div class="grid">
+<label>URL base<input id="baseUrl" type="url" autocomplete="off"></label>
+<label>Header da chave<select id="keyHeader"><option value="X-Service-Key">X-Service-Key</option><option value="X-Api-Key">X-Api-Key</option></select></label>
+<label>Chave<input id="apiKey" type="password" autocomplete="off"></label>
+</div>
+</section>
+<section>
+<h2>Criar job</h2>
+<form id="form">
+<div class="grid">
+<label>Palavra-chave (obrigatória)<input id="keyword" required></label>
+<label>Idioma (lang)<input id="lang" placeholder="pt-BR"></label>
+<label>Profundidade (max_depth)<input id="maxDepth" type="number" min="0"></label>
+<label>Coordenadas (geo_coordinates)<input id="geoCoordinates" placeholder="-25.43,-49.27"></label>
+<label>Zoom<input id="zoom" type="number" min="0"></label>
+<label>Raio (radius)<input id="radius" type="number" min="0" step="any"></label>
+<label>Timeout (s)<input id="timeout" type="number" min="0"></label>
+</div>
+<div class="actions">
+<label class="check"><input id="email" type="checkbox">email</label>
+<label class="check"><input id="fastMode" type="checkbox">fast_mode</label>
+<label class="check"><input id="extraReviews" type="checkbox">extra_reviews</label>
+</div>
+<div class="actions">
+<button id="submit" type="submit">Criar job</button>
+<span id="status" class="muted"></span>
+</div>
+</form>
+</section>
+<section>
+<h2>Resultados</h2>
+<div class="scroll"><ul id="results"></ul></div>
+</section>
+<section>
+<h2>Resposta crua</h2>
+<pre id="raw">Nenhuma resposta ainda.</pre>
+</section>
+</main>
+<script>
+const STORAGE = { baseUrl: 'gmaps_tools_base_url', apiKey: 'gmaps_tools_key', keyHeader: 'gmaps_tools_key_header' };
+const baseUrlInput = document.getElementById('baseUrl');
+const apiKeyInput = document.getElementById('apiKey');
+const keyHeaderSelect = document.getElementById('keyHeader');
+
+function readStored(name) {
+  try {
+    return window.localStorage.getItem(name) || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function writeStored(name, value) {
+  try {
+    window.localStorage.setItem(name, value);
+  } catch (error) {
+    return;
+  }
+}
+
+function loadConfig() {
+  baseUrlInput.value = readStored(STORAGE.baseUrl) || window.location.origin;
+  apiKeyInput.value = readStored(STORAGE.apiKey);
+  const header = readStored(STORAGE.keyHeader);
+  if (header) keyHeaderSelect.value = header;
+}
+
+function saveConfig() {
+  writeStored(STORAGE.baseUrl, baseUrlInput.value.trim());
+  writeStored(STORAGE.apiKey, apiKeyInput.value);
+  writeStored(STORAGE.keyHeader, keyHeaderSelect.value);
+}
+
+function apiUrl(path) {
+  return baseUrlInput.value.trim().replace(/\/+$/, '') + path;
+}
+
+function authHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  headers[keyHeaderSelect.value] = apiKeyInput.value;
+  return headers;
+}
+
+function hasConfig() {
+  return baseUrlInput.value.trim() !== '' && apiKeyInput.value !== '';
+}
+
+function bindConfig(onChange) {
+  loadConfig();
+  [baseUrlInput, apiKeyInput, keyHeaderSelect].forEach(function (element) {
+    element.addEventListener('input', function () {
+      saveConfig();
+      onChange();
+    });
+  });
+  onChange();
+}
+
+async function requestJson(method, path, body) {
+  const response = await fetch(apiUrl(path), {
+    method: method,
+    headers: authHeaders(),
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch (error) {
+    payload = { message: text };
+  }
+  return { ok: response.ok, status: response.status, payload: payload };
+}
+
+function describeError(result) {
+  const payload = result.payload || {};
+  const code = payload.code ? ' [' + payload.code + ']' : '';
+  return 'HTTP ' + result.status + code + ': ' + (payload.message || 'erro sem mensagem');
+}
+
+function pretty(value) {
+  return JSON.stringify(value, null, 2);
+}
+
+const POLL_INTERVAL_MS = 2000;
+const POLL_LIMIT_MS = 6 * 60 * 1000;
+const FINAL_STATUSES = ['completed', 'failed', 'cancelled'];
+const form = document.getElementById('form');
+const submitButton = document.getElementById('submit');
+const statusLabel = document.getElementById('status');
+const rawOutput = document.getElementById('raw');
+const resultsList = document.getElementById('results');
+let pollTimer = null;
+
+function setStatus(text, isError) {
+  statusLabel.textContent = text;
+  statusLabel.className = isError ? 'error' : 'muted';
+}
+
+function stopPolling() {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
+function readNumber(id) {
+  const value = document.getElementById(id).value.trim();
+  return value === '' ? undefined : Number(value);
+}
+
+function readText(id) {
+  const value = document.getElementById(id).value.trim();
+  return value === '' ? undefined : value;
+}
+
+function buildBody() {
+  const body = {
+    keyword: document.getElementById('keyword').value.trim(),
+    lang: readText('lang'),
+    max_depth: readNumber('maxDepth'),
+    geo_coordinates: readText('geoCoordinates'),
+    zoom: readNumber('zoom'),
+    radius: readNumber('radius'),
+    timeout: readNumber('timeout')
+  };
+  if (document.getElementById('email').checked) body.email = true;
+  if (document.getElementById('fastMode').checked) body.fast_mode = true;
+  if (document.getElementById('extraReviews').checked) body.extra_reviews = true;
+  return body;
+}
+
+function renderResults(results) {
+  resultsList.textContent = '';
+  if (!Array.isArray(results) || results.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'muted';
+    empty.textContent = 'Sem resultados.';
+    resultsList.appendChild(empty);
+    return;
+  }
+  results.forEach(function (entry) {
+    const item = document.createElement('li');
+    const parts = [entry.title, entry.address, entry.phone].filter(Boolean);
+    item.textContent = parts.join(' | ');
+    resultsList.appendChild(item);
+  });
+}
+
+async function poll(jobId, startedAt) {
+  if (Date.now() - startedAt > POLL_LIMIT_MS) {
+    setStatus('Tempo esgotado após 6 minutos.', true);
+    submitButton.disabled = !hasConfig();
+    return;
+  }
+  try {
+    const result = await requestJson('GET', '/api/v1/jobs/' + encodeURIComponent(jobId));
+    rawOutput.textContent = pretty(result.payload);
+    if (!result.ok) {
+      setStatus(describeError(result), true);
+      submitButton.disabled = !hasConfig();
+      return;
+    }
+    const job = result.payload || {};
+    setStatus('Status: ' + job.status + ' (' + (job.result_count || 0) + ' resultados)', job.status === 'failed');
+    if (FINAL_STATUSES.indexOf(job.status) !== -1) {
+      renderResults(job.results);
+      submitButton.disabled = !hasConfig();
+      return;
+    }
+  } catch (error) {
+    setStatus('Falha de rede: ' + error.message, true);
+    submitButton.disabled = !hasConfig();
+    return;
+  }
+  pollTimer = setTimeout(function () { poll(jobId, startedAt); }, POLL_INTERVAL_MS);
+}
+
+form.addEventListener('submit', async function (event) {
+  event.preventDefault();
+  stopPolling();
+  submitButton.disabled = true;
+  resultsList.textContent = '';
+  setStatus('Criando job...', false);
+  try {
+    const result = await requestJson('POST', '/api/v1/scrape', buildBody());
+    rawOutput.textContent = pretty(result.payload);
+    if (!result.ok) {
+      setStatus(describeError(result), true);
+      submitButton.disabled = !hasConfig();
+      return;
+    }
+    poll(result.payload.job_id, Date.now());
+  } catch (error) {
+    setStatus('Falha de rede: ' + error.message, true);
+    submitButton.disabled = !hasConfig();
+  }
+});
+
+bindConfig(function () {
+  if (!pollTimer) submitButton.disabled = !hasConfig();
+});
+</script>
+</body>
+</html>
