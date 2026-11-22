@@ -11,14 +11,14 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v3"
 
-	"github.com/gosom/google-maps-scraper/api"
-	"github.com/gosom/google-maps-scraper/env"
-	"github.com/gosom/google-maps-scraper/httpext"
-	"github.com/gosom/google-maps-scraper/log"
-	"github.com/gosom/google-maps-scraper/migrations"
-	"github.com/gosom/google-maps-scraper/postgres"
-	"github.com/gosom/google-maps-scraper/rqueue"
-	saas "github.com/gosom/google-maps-scraper/saas"
+	"github.com/OBrunoW/gmaps-scraper/api"
+	"github.com/OBrunoW/gmaps-scraper/env"
+	"github.com/OBrunoW/gmaps-scraper/httpext"
+	"github.com/OBrunoW/gmaps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/migrations"
+	"github.com/OBrunoW/gmaps-scraper/postgres"
+	"github.com/OBrunoW/gmaps-scraper/rqueue"
+	saas "github.com/OBrunoW/gmaps-scraper/saas"
 )
 
 var Command = &cli.Command{

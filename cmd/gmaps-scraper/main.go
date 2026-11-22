@@ -7,9 +7,9 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/gosom/google-maps-scraper/cmd/gmaps-scraper/cmdserve"
-	"github.com/gosom/google-maps-scraper/cmd/gmaps-scraper/cmdworker"
-	"github.com/gosom/google-maps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/cmd/gmaps-scraper/cmdserve"
+	"github.com/OBrunoW/gmaps-scraper/cmd/gmaps-scraper/cmdworker"
+	"github.com/OBrunoW/gmaps-scraper/log"
 )
 
 func main() {

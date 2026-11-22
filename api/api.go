@@ -10,9 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/gosom/google-maps-scraper/httpext"
-	"github.com/gosom/google-maps-scraper/log"
-	"github.com/gosom/google-maps-scraper/rqueue"
+	"github.com/OBrunoW/gmaps-scraper/httpext"
+	"github.com/OBrunoW/gmaps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/rqueue"
 )
 
 type AppState struct {

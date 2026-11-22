@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosom/google-maps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/gmaps"
 )
 
 func TestNewPlaceJobSanitizesDotDotPlaceURL(t *testing.T) {

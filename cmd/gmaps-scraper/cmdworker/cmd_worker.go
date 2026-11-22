@@ -15,11 +15,11 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v3"
 
-	"github.com/gosom/google-maps-scraper/log"
-	"github.com/gosom/google-maps-scraper/postgres"
-	"github.com/gosom/google-maps-scraper/rqueue"
-	saas "github.com/gosom/google-maps-scraper/saas"
-	"github.com/gosom/google-maps-scraper/scraper"
+	"github.com/OBrunoW/gmaps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/postgres"
+	"github.com/OBrunoW/gmaps-scraper/rqueue"
+	saas "github.com/OBrunoW/gmaps-scraper/saas"
+	"github.com/OBrunoW/gmaps-scraper/scraper"
 )
 
 // workerStats tracks runtime statistics for the health endpoint.

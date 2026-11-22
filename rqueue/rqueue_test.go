@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosom/google-maps-scraper/scraper"
+	"github.com/OBrunoW/gmaps-scraper/scraper"
 	"github.com/stretchr/testify/require"
 )
 

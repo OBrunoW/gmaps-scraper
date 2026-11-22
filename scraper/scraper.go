@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gosom/google-maps-scraper/gmaps"
-	"github.com/gosom/google-maps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/log"
 	"github.com/gosom/scrapemate"
 	"github.com/gosom/scrapemate/scrapemateapp"
 	"github.com/jackc/pgx/v5/pgxpool"

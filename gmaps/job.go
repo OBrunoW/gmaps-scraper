@@ -12,8 +12,8 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gosom/scrapemate"
 
-	"github.com/gosom/google-maps-scraper/deduper"
-	"github.com/gosom/google-maps-scraper/exiter"
+	"github.com/OBrunoW/gmaps-scraper/deduper"
+	"github.com/OBrunoW/gmaps-scraper/exiter"
 )
 
 const (

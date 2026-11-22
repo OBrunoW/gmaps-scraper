@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/gosom/google-maps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/gmaps"
 	"github.com/gosom/scrapemate"
 	"github.com/stretchr/testify/require"
 )
