@@ -74,7 +74,7 @@ func TestBrowserReviewFrameMalformedData(t *testing.T) {
 	t.Parallel()
 
 	for _, raw := range []string{
-		")]}'\n\n100\n[[", // truncated frame must fail, preserving any DOM data
+		")]}'\n\n100\n[[",
 		"not json",
 	} {
 		t.Run(raw, func(t *testing.T) {

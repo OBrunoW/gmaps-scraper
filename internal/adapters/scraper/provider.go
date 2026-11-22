@@ -10,8 +10,6 @@ import (
 
 var _ scrapemate.JobProvider = (*Provider)(nil)
 
-// Provider is a simple FIFO bridge between River workers and ScrapeMate.
-// Root jobs are submitted by the River worker and child jobs are pushed by ScrapeMate.
 type Provider struct {
 	inChan  chan queuedJob
 	jobChan chan scrapemate.IJob
@@ -29,8 +27,6 @@ type queuedJob struct {
 	job scrapemate.IJob
 }
 
-// NewProvider creates a new Provider with the given buffer size.
-// If bufferSize <= 0, defaults to 100.
 func NewProvider(bufferSize int) *Provider {
 	if bufferSize <= 0 {
 		bufferSize = 100
@@ -49,17 +45,14 @@ func NewProvider(bufferSize int) *Provider {
 	return p
 }
 
-// Jobs returns channels for ScrapeMate to consume jobs and errors.
 func (p *Provider) Jobs(_ context.Context) (<-chan scrapemate.IJob, <-chan error) { //nolint:gocritic // unnamedResult: interface implementation requires exact signature
 	return p.jobChan, p.errChan
 }
 
-// Push adds a child job to the provider queue.
 func (p *Provider) Push(ctx context.Context, job scrapemate.IJob) error {
 	return p.enqueue(ctx, queuedJob{job: job}, false)
 }
 
-// Submit adds a root job to the provider queue.
 func (p *Provider) Submit(ctx context.Context, job scrapemate.IJob) error {
 	return p.enqueue(ctx, queuedJob{job: job}, true)
 }
@@ -104,7 +97,6 @@ func (p *Provider) run() {
 	}
 }
 
-// Close closes the provider and job output channel.
 func (p *Provider) Close() {
 	p.closeOnce.Do(func() {
 		p.mu.Lock()

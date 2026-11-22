@@ -37,7 +37,7 @@ func TestCleanEmail(t *testing.T) {
 	}
 
 	rejected := []string{
-		// asset/media filenames shaped like name@2x.ext
+
 		"logo-300x112@2x.avif",
 		"header@2x.png",
 		"hero@2x.webp",
@@ -45,14 +45,14 @@ func TestCleanEmail(t *testing.T) {
 		"icon@2x.svg",
 		"style@2x.css",
 		"app@2x.js",
-		// telemetry/tracker domains
+
 		"user@sentry.wixpress.com",
 		"user@sentry.io",
 		"hash@o123.ingest.us.sentry.io",
-		// control characters
+
 		"a\x00b@example.org",
 		"contact\x07@example.org",
-		// invalid email formats
+
 		"not-an-email",
 		"@nodomain",
 		"",

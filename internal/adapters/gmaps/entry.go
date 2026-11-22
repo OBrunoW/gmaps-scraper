@@ -96,8 +96,7 @@ type Entry struct {
 	Category   string              `json:"category"`
 	Address    string              `json:"address"`
 	OpenHours  map[string][]string `json:"open_hours"`
-	// PopularTImes is a map with keys the days of the week
-	// and value is a map with key the hour and value the traffic in that time
+
 	PopularTimes     map[string]map[int]int `json:"popular_times"`
 	WebSite          string                 `json:"web_site"`
 	Phone            string                 `json:"phone"`
@@ -106,10 +105,7 @@ type Entry struct {
 	ReviewRating     float64                `json:"review_rating"`
 	ReviewsPerRating map[int]int            `json:"reviews_per_rating"`
 	Latitude         float64                `json:"latitude"`
-	// Longtitude holds the longitude. The struct field and the legacy JSON
-	// key are misspelled ("longtitude"); MarshalJSON also emits the correctly
-	// spelled "longitude" key, and UnmarshalJSON accepts either. The field
-	// name is kept for backwards compatibility with existing imports.
+
 	Longtitude          float64           `json:"longtitude"`
 	Status              string            `json:"status"`
 	Description         string            `json:"description"`
@@ -134,14 +130,8 @@ type Entry struct {
 	ReviewCollection    *ReviewCollection `json:"review_collection,omitempty"`
 }
 
-// entryAlias is used inside Marshal/UnmarshalJSON to avoid infinite recursion
-// while still benefiting from the struct's json tags for every other field.
 type entryAlias Entry
 
-// MarshalJSON emits both the legacy "longtitude" key (preserved for backwards
-// compatibility) and the correctly spelled "longitude" key so downstream
-// consumers can migrate without a flag day.
-//
 //nolint:gocritic // value receiver preserves json.Marshaler behavior for Entry values.
 func (e Entry) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -153,9 +143,6 @@ func (e Entry) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON accepts either "longtitude" (legacy) or "longitude" (preferred)
-// as the longitude key. "longtitude" wins when both are present so existing
-// data files keep round-tripping byte-identical.
 func (e *Entry) UnmarshalJSON(data []byte) error {
 	aux := struct {
 		Longitude *float64 `json:"longitude"`
@@ -175,7 +162,7 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 }
 
 func (e *Entry) haversineDistance(lat, lon float64) float64 {
-	const R = 6371e3 // earth radius in meters
+	const R = 6371e3
 
 	clat := lat * math.Pi / 180
 	clon := lon * math.Pi / 180
@@ -331,7 +318,7 @@ func (e *Entry) AddExtraReviews(pages [][]byte) {
 }
 
 func extractReviews(data []byte) []Review {
-	// Skip the security prefix
+
 	prefix := ")]}'\n"
 	if len(data) >= len(prefix) && string(data[:len(prefix)]) == prefix {
 		data = data[len(prefix):]
@@ -352,7 +339,7 @@ func extractReviews(data []byte) []Review {
 
 	reviewsI := getNthElementAndCast[[]any](jd, 2)
 	if len(reviewsI) == 0 {
-		// Try alternative indices - Google may have changed the structure
+
 		reviewsI = getNthElementAndCast[[]any](jd, 0)
 	}
 
@@ -420,7 +407,7 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 	entry.Status = getNthElementAndCast[string](darray, 34, 4, 4)
 
 	if entry.Status == "" {
-		// [34][4][4] went dead ~2026-07; closed-state enum now at [88][0] ("CLOSED" / null)
+
 		entry.Status = getNthElementAndCast[string](darray, 88, 0)
 	}
 
@@ -447,7 +434,6 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 		}
 	}
 
-	// Extract Street View URL from images
 	entry.StreetViewURL = extractStreetViewURL(entry.Images)
 
 	entry.Reservations = getLinkSource(getLinkSourceParams{
@@ -522,12 +508,11 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 		5: int(getNthElementAndCast[float64](darray, 175, 3, 4)),
 	}
 
-	// Parse inline reviews from the page data
 	reviewsI := getNthElementAndCast[[]any](darray, 175, 9, 0, 0)
 	if len(reviewsI) > 0 {
 		entry.UserReviews = parseReviews(reviewsI)
 	} else {
-		// Try alternative location for reviews
+
 		reviewsI = getNthElementAndCast[[]any](darray, 175, 9, 0)
 		if len(reviewsI) > 0 {
 			entry.UserReviews = parseReviews(reviewsI)
@@ -545,7 +530,7 @@ func parseReviews(reviewsI []any) []Review {
 	for i := range reviewsI {
 		el := getNthElementAndCast[[]any](reviewsI, i, 0)
 		if len(el) == 0 {
-			// Try alternative structure
+
 			el = getNthElementAndCast[[]any](reviewsI, i)
 			if len(el) == 0 {
 				continue
@@ -561,7 +546,6 @@ func parseReviews(reviewsI []any) []Review {
 			Description:    reviewDescription(el),
 		}
 
-		// Extended metadata
 		review.ReviewID = getNthElementAndCast[string](el, 0)
 		review.PostedAtUnixMicros = int64(getNthElementAndCast[float64](el, 1, 2))
 		review.UpdatedAtUnixMicros = int64(getNthElementAndCast[float64](el, 1, 3))
@@ -609,10 +593,6 @@ func parseReviews(reviewsI []any) []Review {
 			continue
 		}
 
-		// Extract user-contributed photo URLs for this review.
-		// Structure: el[2][2] is the image list; each image's direct lh3 URL lives at [1][6][0].
-		// The previous paths (e.g. [2][2][0][1][21][7]) landed on the imagery/report
-		// "report this photo" URL, not the actual hosted image. See issue #240.
 		imgs := getNthElementAndCast[[]any](el, 2, 2)
 		for j := range imgs {
 			imageURL := getNthElementAndCast[string](imgs, j, 1, 6, 0)
@@ -738,10 +718,10 @@ func getLinkSource(params getLinkSourceParams) []LinkSource {
 
 //nolint:mnd // it's ok, I need the indexes
 func getHours(darray []any) map[string][]string {
-	// Try new structure first (as of Nov 2025) - darray[203][0]
+
 	items := getNthElementAndCast[[]any](darray, 203, 0)
 	if len(items) == 0 {
-		// Fall back to old structure - darray[34][1]
+
 		items = getNthElementAndCast[[]any](darray, 34, 1)
 	}
 
@@ -753,16 +733,14 @@ func getHours(darray []any) map[string][]string {
 			continue
 		}
 
-		// New structure: [0] = day name, [3] = time slots array
 		day := getNthElementAndCast[string](itemArray, 0)
 		if day == "" {
 			continue
 		}
 
-		// Try new structure for times
 		timeSlotsI := getNthElementAndCast[[]any](itemArray, 3)
 		if len(timeSlotsI) > 0 {
-			// New format: each slot is [formatted_string, [[hour, min], [hour, min]]]
+
 			times := make([]string, 0, len(timeSlotsI))
 
 			for _, slot := range timeSlotsI {
@@ -771,7 +749,6 @@ func getHours(darray []any) map[string][]string {
 					continue
 				}
 
-				// Get the formatted time string (e.g., "11 am–1:30 pm")
 				timeStr := getNthElementAndCast[string](slotArray, 0)
 				if timeStr != "" {
 					times = append(times, timeStr)
@@ -782,7 +759,7 @@ func getHours(darray []any) map[string][]string {
 				hours[day] = times
 			}
 		} else {
-			// Fall back to old structure: [1] = times array
+
 			timesI := getNthElementAndCast[[]any](itemArray, 1)
 			times := make([]string, 0, len(timesI))
 
@@ -960,7 +937,6 @@ func stringify(v any) string {
 	}
 }
 
-// extractStreetViewURL finds the Street View image and extracts the panoid to create a proper URL
 func extractStreetViewURL(images []Image) string {
 	for _, img := range images {
 		if strings.Contains(img.Title, "Street View") {

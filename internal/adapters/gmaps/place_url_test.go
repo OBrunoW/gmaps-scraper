@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OBrunoW/gmaps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
 )
 
 func TestNewPlaceJobSanitizesDotDotPlaceURL(t *testing.T) {
@@ -72,10 +72,6 @@ func TestNewPlaceJobSanitizesDotDotPlaceURL(t *testing.T) {
 	}
 }
 
-// TestNewPlaceJobDotDotURLSurvivesNormalization is the regression that fails
-// without the fix: the raw "/maps/place/../data=" URL loses its "/maps/place/"
-// marker under RFC 3986 remove_dot_segments, which is how the detail place is
-// dropped. After sanitizing, the marker and the data id both survive.
 func TestNewPlaceJobDotDotURLSurvivesNormalization(t *testing.T) {
 	const raw = "https://www.google.com/maps/place/../data=!4m2!3m1!1s0x14e732fd76f0d90d:0xe5415928d6702b47!10m1!1e1"
 

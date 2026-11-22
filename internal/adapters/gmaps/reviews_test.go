@@ -97,7 +97,7 @@ func Test_parseReviews_NativeWithReply(t *testing.T) {
 	assert.Equal(t, int64(1772266947000000), r.ReplyPostedAtUnixMicros)
 	assert.Equal(t, int64(1772266947000000), r.ReplyUpdatedAtUnixMicros)
 	assert.Equal(t, "de", r.ReplyLanguage)
-	// Backward-compat: existing fields unchanged
+
 	assert.Equal(t, "E. Ö.", r.Name)
 	assert.NotEmpty(t, r.Description)
 	assert.Equal(t, r.TextOriginal, r.Description)
@@ -120,7 +120,7 @@ func Test_parseReviews_Aggregator(t *testing.T) {
 	assert.Empty(t, r.TranslatedLang)
 	assert.NotEmpty(t, r.TextOriginal)
 	assert.Empty(t, r.TextTranslated)
-	// No reply
+
 	assert.Equal(t, int64(0), r.ReplyPostedAtUnixMicros)
 	assert.Empty(t, r.ReplyTextOriginal)
 }

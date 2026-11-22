@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OBrunoW/gmaps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
 	"github.com/gosom/scrapemate"
 	"github.com/stretchr/testify/require"
 )

@@ -10,7 +10,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/require"
 
-	"github.com/OBrunoW/gmaps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
 )
 
 func createGoQueryFromFile(t *testing.T, path string) *goquery.Document {
@@ -133,7 +133,7 @@ func Test_EntryFromJSON(t *testing.T) {
 		},
 	}
 
-	raw, err := os.ReadFile("../testdata/raw.json")
+	raw, err := os.ReadFile("../../../testdata/raw.json")
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
 
@@ -181,8 +181,8 @@ func Test_EntryFromJSON(t *testing.T) {
 
 func Test_EntryFromJSON2(t *testing.T) {
 	fnames := []string{
-		"../testdata/panic.json",
-		"../testdata/panic2.json",
+		"../../../testdata/panic.json",
+		"../../../testdata/panic2.json",
 	}
 	for _, fname := range fnames {
 		raw, err := os.ReadFile(fname)
@@ -195,7 +195,7 @@ func Test_EntryFromJSON2(t *testing.T) {
 }
 
 func Test_EntryFromJSONRaw2(t *testing.T) {
-	raw, err := os.ReadFile("../testdata/raw2.json")
+	raw, err := os.ReadFile("../../../testdata/raw2.json")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
@@ -207,7 +207,7 @@ func Test_EntryFromJSONRaw2(t *testing.T) {
 }
 
 func Test_EntryFromJSONExtractsAcceptedCreditCards(t *testing.T) {
-	raw, err := os.ReadFile("../testdata/panic2.json")
+	raw, err := os.ReadFile("../../../testdata/panic2.json")
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
 
@@ -218,7 +218,7 @@ func Test_EntryFromJSONExtractsAcceptedCreditCards(t *testing.T) {
 }
 
 func Test_EntryFromJSONMergesDuplicateAboutOptions(t *testing.T) {
-	raw, err := os.ReadFile("../testdata/panic2.json")
+	raw, err := os.ReadFile("../../../testdata/panic2.json")
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
 
@@ -290,8 +290,6 @@ func Test_EntryUnmarshalAcceptsEitherLongitudeKey(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"longitude":42.5}`), &modern))
 	require.Equal(t, 42.5, modern.Longtitude)
 
-	// When both are present, the legacy spelling wins so existing files
-	// round-trip byte-identical.
 	var both gmaps.Entry
 
 	require.NoError(t, json.Unmarshal([]byte(`{"longtitude":1.0,"longitude":2.0}`), &both))
@@ -299,7 +297,7 @@ func Test_EntryUnmarshalAcceptsEitherLongitudeKey(t *testing.T) {
 }
 
 func Test_EntryFromJsonC(t *testing.T) {
-	raw, err := os.ReadFile("../testdata/output.json")
+	raw, err := os.ReadFile("../../../testdata/output.json")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
@@ -314,7 +312,7 @@ func Test_EntryFromJsonC(t *testing.T) {
 }
 
 func Test_EntryFromJSONStatusFallback(t *testing.T) {
-	// Places where [34][4][4] is absent carry the closed-state enum at [88][0].
+
 	darray := make([]any, 89)
 	darray[88] = []any{"CLOSED"}
 	jd := []any{nil, nil, nil, nil, nil, nil, darray}

@@ -47,7 +47,6 @@ func WithMaxConnIdleTime(d time.Duration) ConnectOption {
 	}
 }
 
-// Connect establishes a connection pool to the PostgreSQL database using the provided DSN and options.
 func Connect(ctx context.Context, dsn string, opts ...ConnectOption) (*pgxpool.Pool, error) {
 	options := &ConnectOptions{
 		pingTimeout:     5 * time.Second,

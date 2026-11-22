@@ -2,8 +2,6 @@ package gmaps
 
 const reviewReasonLimited = "limited_view"
 
-// ReviewCollection describes the outcome of an explicitly requested extra-review
-// collection. Expected includes Google's ratings-only reviews as well as text reviews.
 type ReviewCollection struct {
 	Status    string `json:"status"`
 	Method    string `json:"method"`
@@ -36,8 +34,6 @@ func (e *Entry) finishReviewCollection(outcome ReviewCollection) {
 	e.ReviewCollection = &outcome
 }
 
-// appendUniqueReviews keeps first-seen ordering while upgrading duplicate IDs
-// when a later page contains expanded text or richer structured metadata.
 func appendUniqueReviews(existing, incoming []Review) []Review {
 	byID := make(map[string]int, len(existing))
 	for i := range existing {

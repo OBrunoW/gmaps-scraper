@@ -166,7 +166,7 @@ func (m *mockBrowserPage) Unwrap() any {
 
 func Test_extractReviewsFromPage_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
+	cancel()
 
 	mock := &mockBrowserPage{}
 	reviews, err := extractReviewsFromPage(ctx, mock, 10)
@@ -182,7 +182,7 @@ func Test_extractReviewsFromPage_TargetLimit(t *testing.T) {
 		evalFn: func(js string, _ ...any) (any, error) {
 			if strings.Contains(js, "reviewElements") {
 				callCount++
-				// Return 5 unique reviews per call
+
 				res := make([]any, 0, 5)
 
 				for i := 0; i < 5; i++ {
@@ -203,7 +203,7 @@ func Test_extractReviewsFromPage_TargetLimit(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// The final batch must be capped at the requested number of reviews.
+
 	reviews, err := extractReviewsFromPage(ctx, mock, 12)
 	require.NoError(t, err)
 	assert.Len(t, reviews, 12)
@@ -215,7 +215,7 @@ func Test_extractReviewsFromPage_Deduplication(t *testing.T) {
 		evalFn: func(js string, _ ...any) (any, error) {
 			if strings.Contains(js, "reviewElements") {
 				evalPass++
-				// First pass: 3 reviews
+
 				if evalPass == 1 {
 					return []any{
 						map[string]any{"review_id": "r1", "author_name": "A", "rating": 5, "text": "Good"},
@@ -223,7 +223,7 @@ func Test_extractReviewsFromPage_Deduplication(t *testing.T) {
 						map[string]any{"review_id": "", "author_name": "C", "rating": 5, "text": "Same text"},
 					}, nil
 				}
-				// Second pass: r1 and r2 are duplicates, r3 is new, C is duplicate text
+
 				return []any{
 					map[string]any{"review_id": "r1", "author_name": "A", "rating": 5, "text": "Good"},
 					map[string]any{"review_id": "r2", "author_name": "B", "rating": 4, "text": "Nice"},
@@ -239,7 +239,7 @@ func Test_extractReviewsFromPage_Deduplication(t *testing.T) {
 	ctx := context.Background()
 	reviews, err := extractReviewsFromPage(ctx, mock, 4)
 	require.NoError(t, err)
-	// Should have exactly 4 unique reviews: r1, r2, C (no id), r3
+
 	assert.Len(t, reviews, 4)
 	assert.Equal(t, "r1", reviews[0].ReviewID)
 	assert.Equal(t, "r2", reviews[1].ReviewID)
@@ -252,7 +252,7 @@ func Test_extractReviewsFromPage_StuckDetection(t *testing.T) {
 	mock := &mockBrowserPage{
 		evalFn: func(js string, _ ...any) (any, error) {
 			if strings.Contains(js, "reviewElements") {
-				// Always return the exact same 2 reviews
+
 				return []any{
 					map[string]any{"review_id": "r1", "author_name": "A", "rating": 5, "text": "Good"},
 					map[string]any{"review_id": "r2", "author_name": "B", "rating": 4, "text": "Nice"},
@@ -264,10 +264,10 @@ func Test_extractReviewsFromPage_StuckDetection(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// Ask for 50 reviews, but feed never yields more than 2
+
 	reviews, err := extractReviewsFromPage(ctx, mock, 50)
 	require.NoError(t, err)
-	// Must exit gracefully after stuck threshold without infinite loop
+
 	assert.Len(t, reviews, 2)
 }
 
@@ -329,7 +329,7 @@ func Test_FetchReviewsWithFallback_DOMFallbackOnInvalidRPCURL(t *testing.T) {
 	ctx := context.Background()
 	params := fetchReviewsParams{
 		page: mock,
-		// A missing place ID fails before HTTP, keeping this test offline.
+
 		mapURL:      "https://www.google.com/maps/place/test",
 		reviewCount: 1,
 	}

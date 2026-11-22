@@ -62,7 +62,7 @@ func TestReviewMergePreservesExpandedTextAndStructuredMetadata(t *testing.T) {
 	require.Equal(t, int64(123), inline[0].PostedAtUnixMicros)
 	require.Equal(t, "Thank you", inline[0].ReplyText)
 	require.Equal(t, 5, inline[0].Rating)
-	// A DOM snapshot may have an expanded text but no structured metadata.
+
 	enrichKnownReviews(inline, []Review{{ReviewID: "one", Description: "A long expanded review description with the remaining text", Rating: 5}})
 	require.Contains(t, inline[0].Description, "remaining text")
 	require.Equal(t, int64(123), inline[0].PostedAtUnixMicros)
@@ -98,7 +98,7 @@ func TestLimitedViewStopsWithoutPaginationRetries(t *testing.T) {
 func TestPlaceProcessMergesNetworkAndDOMReviewsAndReportsLimitedAccess(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("../testdata/raw.json")
+	raw, err := os.ReadFile("../../../testdata/raw.json")
 	require.NoError(t, err)
 
 	var placeData, payload []any

@@ -1,8 +1,5 @@
 package gmaps
 
-// completeAddressFromPlaceArray reads Google's structured address slots, shared
-// by place details and fast search results. Missing slots remain empty: parsing
-// a formatted address would require assumptions about its country and locale.
 func completeAddressFromPlaceArray(business []any) Address {
 	const addressNode = 183
 

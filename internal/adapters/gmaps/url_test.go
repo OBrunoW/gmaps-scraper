@@ -3,7 +3,7 @@ package gmaps_test
 import (
 	"testing"
 
-	"github.com/OBrunoW/gmaps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
 )
 
 func TestNewGmapJobBuildsURLFromQuery(t *testing.T) {

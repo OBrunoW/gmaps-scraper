@@ -56,7 +56,6 @@ func (f *fetcher) fetch(ctx context.Context) (FetchReviewsResponse, error) {
 		return FetchReviewsResponse{}, fmt.Errorf("failed to generate initial URL: %v", err)
 	}
 
-	// First, try to fetch using the browser's session (has cookies/authentication)
 	if f.params.page != nil {
 		ans, err := f.fetchWithBrowser(ctx, reviewURL, requestIDForSession)
 		if err == nil && len(ans.pages) > 0 {
@@ -66,7 +65,6 @@ func (f *fetcher) fetch(ctx context.Context) (FetchReviewsResponse, error) {
 		log.Printf("Browser-based RPC fetch failed: %v, trying HTTP", err)
 	}
 
-	// Fallback to direct HTTP (may fail due to lack of authentication)
 	currentPageBody, err := f.fetchReviewPage(ctx, reviewURL)
 	if err != nil {
 		log.Printf("RPC fetch failed, will try DOM extraction: %v", err)
@@ -98,12 +96,10 @@ func (f *fetcher) fetch(ctx context.Context) (FetchReviewsResponse, error) {
 	return ans, nil
 }
 
-// fetchWithBrowser uses Playwright to fetch the review API with browser cookies
 func (f *fetcher) fetchWithBrowser(_ context.Context, initialURL, requestID string) (FetchReviewsResponse, error) {
 	ans := FetchReviewsResponse{}
 	page := f.params.page
 
-	// Use JavaScript fetch to get the reviews with proper cookies
 	jsCode := fmt.Sprintf(`async () => {
 		try {
 			const response = await fetch('%s', {
@@ -145,9 +141,8 @@ func (f *fetcher) fetchWithBrowser(_ context.Context, initialURL, requestID stri
 
 	ans.pages = append(ans.pages, []byte(data))
 
-	// Get additional pages
 	nextPageToken := extractNextPageToken([]byte(data))
-	for nextPageToken != "" && len(ans.pages) < 50 { // Limit to 50 pages
+	for nextPageToken != "" && len(ans.pages) < 50 {
 		nextURL, err := f.generateURL(f.params.mapURL, nextPageToken, 20, requestID)
 		if err != nil {
 			break
@@ -195,18 +190,17 @@ var (
 	patterns     map[string]*regexp.Regexp
 )
 
-const hexMatchPattern = `0x[0-9a-fA-F]+:0x[0-9a-fA-F]+` // Hex format place ID
+const hexMatchPattern = `0x[0-9a-fA-F]+:0x[0-9a-fA-F]+`
 
-// extractPlaceID extracts the place ID from various Google Maps URL formats
 func extractPlaceID(mapURL string) (string, error) {
 	patternsOnce.Do(func() {
 		patterns = make(map[string]*regexp.Regexp)
-		// Try multiple patterns for extracting place ID
+
 		avail := []string{
-			`!1s([^!]+)`,                             // Standard format: !1s0x...
-			`place_id=([^&]+)`,                       // Query parameter format
-			`/place/[^/]+/@[^/]+/data=!.*!1s([^!]+)`, // Full place URL
-			hexMatchPattern,                          // Hex format place ID
+			`!1s([^!]+)`,
+			`place_id=([^&]+)`,
+			`/place/[^/]+/@[^/]+/data=!.*!1s([^!]+)`,
+			hexMatchPattern,
 		}
 
 		patterns = make(map[string]*regexp.Regexp)
@@ -225,7 +219,7 @@ func extractPlaceID(mapURL string) (string, error) {
 
 			return rawPlaceID, nil
 		}
-		// For hex format, match[0] is the full match
+
 		if pattern == hexMatchPattern && len(match) >= 1 {
 			return match[0], nil
 		}
@@ -243,7 +237,6 @@ func (f *fetcher) generateURL(mapURL, pageToken string, pageSize int, requestID 
 	encodedPlaceID := url.QueryEscape(rawPlaceID)
 	encodedPageToken := url.QueryEscape(pageToken)
 
-	// Updated pb components based on current Google Maps API format (Dec 2025)
 	pbComponents := []string{
 		fmt.Sprintf("!1m6!1s%s", encodedPlaceID),
 		"!6m4!4m1!1e1!4m1!1e3",
@@ -253,7 +246,6 @@ func (f *fetcher) generateURL(mapURL, pageToken string, pageSize int, requestID 
 		"!12m4!1b1!2b1!4m1!1e1!11m0!13m1!1e1",
 	}
 
-	// Use English language for consistent parsing
 	fullURL := fmt.Sprintf(
 		"https://www.google.com/maps/rpc/listugcposts?authuser=0&hl=en&pb=%s",
 		strings.Join(pbComponents, ""),
@@ -325,7 +317,6 @@ func generateRandomID(length int) (string, error) {
 	return "", errors.New("generated ID is shorter than expected")
 }
 
-// DOMReview represents a review extracted from the DOM
 type DOMReview struct {
 	ReviewID                string
 	AuthorName              string
@@ -337,7 +328,6 @@ type DOMReview struct {
 	Images                  []string
 }
 
-// ConvertDOMReviewsToReviews converts DOMReview slice to Review slice
 func ConvertDOMReviewsToReviews(domReviews []DOMReview) []Review {
 	reviews := make([]Review, 0, len(domReviews))
 
@@ -361,8 +351,6 @@ func ConvertDOMReviewsToReviews(domReviews []DOMReview) []Review {
 	return reviews
 }
 
-// dedupeDOMReviewsAgainstPrimary drops DOM reviews that are already present in the
-// primary reviews. Matching is by review id only, an empty id is never a duplicate.
 func dedupeDOMReviewsAgainstPrimary(primary, domReviews []Review) []Review {
 	seen := make(map[string]struct{}, len(primary))
 
@@ -424,7 +412,6 @@ func decodeDOMReviews(raw []any) []DOMReview {
 			review.ProfilePicture = v
 		}
 
-		// Playwright decodes whole JS numbers as int, fractional ones as float64.
 		switch v := reviewMap["rating"].(type) {
 		case int:
 			review.Rating = v
@@ -432,7 +419,6 @@ func decodeDOMReviews(raw []any) []DOMReview {
 			review.Rating = int(v)
 		}
 
-		// The rating selectors also match non-star aria-labels, e.g. "12 reviews".
 		if review.Rating < 1 || review.Rating > 5 {
 			review.Rating = 0
 		}
@@ -459,8 +445,6 @@ func decodeDOMReviews(raw []any) []DOMReview {
 	return decoded
 }
 
-// extractReviewsFromPage extracts reviews directly from the page DOM
-// This is a fallback when the RPC API fails
 func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, maxReviews int, states ...*reviewExtractionState) ([]DOMReview, error) {
 	state := &reviewExtractionState{}
 	if len(states) > 0 && states[0] != nil {
@@ -473,7 +457,6 @@ func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, ma
 
 	log.Printf("Attempting DOM-based review extraction")
 
-	// First, try to click the reviews section to open the reviews panel
 	clickedReviews, _ := page.Eval(`() => {
 		try {
 			const triggerClick = (el) => {
@@ -530,12 +513,10 @@ func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, ma
 		log.Printf("Clicked reviews via: %v", clickedReviews)
 	}
 
-	// Wait for reviews panel to load
 	const reviewsWaitTimeout = 5 * time.Second
 
 	_ = page.WaitForSelector(".jftiEf, div[data-review-id]", reviewsWaitTimeout)
 
-	// In case clicking the rating revealed a new "Reviews" tab, ensure the Reviews tab is selected
 	_, _ = page.Eval(`() => {
 		const triggerClick = (el) => {
 			if (!el) return false;
@@ -554,8 +535,7 @@ func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, ma
 		}
 		return false;
 	}`)
-	// The tab may have been mounted by the first click. Wait again after
-	// selecting it rather than scrolling the place overview while it loads.
+
 	_ = page.WaitForSelector(".jftiEf, div[data-review-id]", reviewsWaitTimeout)
 
 	var reviews []DOMReview
@@ -567,7 +547,7 @@ func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, ma
 	maxScrollAttempts := defaultMaxScrollAttempts
 
 	if maxReviews > 0 {
-		// Each scroll pass on Google Maps typically yields ~10 new reviews
+
 		needed := (maxReviews / 10) + 10
 		if needed > maxScrollAttempts {
 			maxScrollAttempts = needed
@@ -589,7 +569,6 @@ func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, ma
 		default:
 		}
 
-		// Extract reviews from the DOM - updated for Dec 2025 Google Maps structure
 		reviewsJSON, err := page.Eval(`() => {
 			try {
 				const reviews = [];
@@ -826,7 +805,6 @@ func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, ma
 			lastCount = currentCount
 		}
 
-		// Scroll to load more reviews
 		_, _ = page.Eval(`() => {
 			try {
 				// 1. Walk up from review card to find the true scrollable container
@@ -889,8 +867,6 @@ func extractReviewsFromPage(ctx context.Context, page scrapemate.BrowserPage, ma
 	return reviews, nil
 }
 
-// FetchReviewsWithFallback collects anonymous browser-generated review responses
-// alongside a DOM fallback. Callers without a browser retain the legacy HTTP path.
 func FetchReviewsWithFallback(ctx context.Context, params fetchReviewsParams) (FetchReviewsResponse, []DOMReview, error) {
 	if params.page != nil {
 		return collectBrowserReviews(ctx, params)
@@ -898,10 +874,9 @@ func FetchReviewsWithFallback(ctx context.Context, params fetchReviewsParams) (F
 
 	fetcher := newReviewFetcher(params)
 
-	// Try RPC-based extraction first
 	rpcResponse, err := fetcher.fetch(ctx)
 	if err == nil && len(rpcResponse.pages) > 0 {
-		// Validate that we actually got reviews
+
 		totalReviews := 0
 
 		for _, page := range rpcResponse.pages {
@@ -917,7 +892,6 @@ func FetchReviewsWithFallback(ctx context.Context, params fetchReviewsParams) (F
 		log.Printf("RPC returned empty reviews, trying DOM extraction")
 	}
 
-	// Return whatever we have
 	if err != nil {
 		return FetchReviewsResponse{}, nil, fmt.Errorf("all review extraction methods failed: %v", err)
 	}

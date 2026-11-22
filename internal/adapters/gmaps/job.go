@@ -12,8 +12,8 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gosom/scrapemate"
 
-	"github.com/OBrunoW/gmaps-scraper/deduper"
-	"github.com/OBrunoW/gmaps-scraper/exiter"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps/deduper"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps/exiter"
 )
 
 const (
@@ -54,7 +54,7 @@ func NewGmapJob(
 		query = url.QueryEscape(query)
 		mapURL = fmt.Sprintf("https://www.google.com/maps/search/%s/@%s,%dz", query, strings.ReplaceAll(geoCoordinates, " ", ""), zoom)
 	default:
-		// Warning: geo and zoom MUST be both set or not
+
 		query = url.QueryEscape(query)
 		mapURL = fmt.Sprintf("https://www.google.com/maps/search/%s", query)
 	}
@@ -216,15 +216,12 @@ func (j *GmapJob) BrowserActions(ctx context.Context, page scrapemate.BrowserPag
 
 	const defaultTimeout = 5 * time.Second
 
-	// Ignore WaitForURL errors — Google Maps may redirect slowly especially via proxy
 	_ = page.WaitForURL(page.URL(), defaultTimeout)
 
 	resp.URL = pageResponse.URL
 	resp.StatusCode = pageResponse.StatusCode
 	resp.Headers = pageResponse.Headers
 
-	// When Google Maps finds only 1 place, it slowly redirects to that place's URL
-	// check element scroll
 	sel := `div[role='feed']`
 
 	err = page.WaitForSelector(sel, 10*time.Second)
@@ -293,7 +290,7 @@ func waitUntilURLContains(ctx context.Context, page scrapemate.BrowserPage, s st
 }
 
 func clickRejectCookiesIfRequired(page scrapemate.BrowserPage) {
-	// Use JavaScript to find and click - faster than multiple locator calls
+
 	_, _ = page.Eval(`() => {
 		// Try consent form buttons first
 		const consentForm = document.querySelector('form[action*="consent.google"]');
@@ -334,7 +331,7 @@ func scroll(ctx context.Context,
 	}`
 
 	var currentScrollHeight int
-	// Scroll to the bottom of the page.
+
 	waitTime := 100.
 	cnt := 0
 
@@ -351,13 +348,11 @@ func scroll(ctx context.Context,
 			waitTime2 = maxWait2
 		}
 
-		// Scroll to the bottom of the page.
 		scrollHeight, err := page.Eval(fmt.Sprintf(expr, waitTime2))
 		if err != nil {
 			return cnt, err
 		}
 
-		// Handle both int and float64 because browser-evaluated numbers may arrive as either type.
 		var height int
 
 		switch v := scrollHeight.(type) {

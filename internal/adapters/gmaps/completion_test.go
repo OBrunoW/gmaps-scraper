@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/OBrunoW/gmaps-scraper/gmaps"
 	"github.com/gosom/scrapemate"
 	"github.com/stretchr/testify/require"
 )
@@ -63,7 +63,7 @@ func TestPlaceJobProcessDoesNotCompleteInputBeforeResultIsWritten(t *testing.T) 
 	t.Parallel()
 
 	job := gmaps.NewPlaceJob("input-1", "en", "https://www.google.com/maps/place/a", false, false)
-	raw, err := os.ReadFile("../testdata/raw.json")
+	raw, err := os.ReadFile("../../../testdata/raw.json")
 	require.NoError(t, err)
 
 	result, next, err := job.Process(context.Background(), &scrapemate.Response{

@@ -4,23 +4,23 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/OBrunoW/gmaps-scraper/gmaps"
-	"github.com/OBrunoW/gmaps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps/exiter"
+	"github.com/OBrunoW/gmaps-scraper/internal/domain"
+	"github.com/OBrunoW/gmaps-scraper/internal/log"
 	"github.com/gosom/scrapemate"
 	"github.com/gosom/scrapemate/scrapemateapp"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ScraperManager manages the scraper lifecycle, restarting it after a configured
-// number of jobs to prevent memory leaks.
-//
 //nolint:revive // ScraperManager is intentionally named with its package context
 type ScraperManager struct {
-	dbPool      *pgxpool.Pool
+	results     domain.ResultRepository
 	concurrency int
 	fastMode    bool
 	debug       bool
@@ -34,15 +34,12 @@ type ScraperManager struct {
 
 	jobCount atomic.Int64
 
-	// Channel to signal restart needed
 	restartChan chan struct{}
 
-	// OnJobComplete is called after each job finishes (for stats tracking).
 	OnJobComplete func()
 }
 
-// NewScraperManager creates a new ScraperManager.
-func NewScraperManager(dbPool *pgxpool.Pool, concurrency int, fastMode, debug bool, maxJobs int64, proxies []string) *ScraperManager {
+func NewScraperManager(results domain.ResultRepository, concurrency int, fastMode, debug bool, maxJobs int64, proxies []string) *ScraperManager {
 	if concurrency <= 0 {
 		concurrency = 1
 	}
@@ -52,23 +49,21 @@ func NewScraperManager(dbPool *pgxpool.Pool, concurrency int, fastMode, debug bo
 	}
 
 	return &ScraperManager{
-		dbPool:        dbPool,
+		results:       results,
 		concurrency:   concurrency,
 		fastMode:      fastMode,
 		debug:         debug,
 		maxJobs:       maxJobs,
 		proxies:       proxies,
 		restartChan:   make(chan struct{}, 1),
-		centralWriter: NewCentralWriter(dbPool, nil),
+		centralWriter: NewCentralWriter(results, nil),
 	}
 }
 
-// CentralWriter returns the CentralWriter instance.
 func (m *ScraperManager) CentralWriter() *CentralWriter {
 	return m.centralWriter
 }
 
-// getProvider returns the current provider.
 func (m *ScraperManager) getProvider() *Provider {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -76,7 +71,6 @@ func (m *ScraperManager) getProvider() *Provider {
 	return m.provider
 }
 
-// JobDone is called after each River job completes.
 func (m *ScraperManager) JobDone() {
 	count := m.jobCount.Add(1)
 
@@ -85,7 +79,7 @@ func (m *ScraperManager) JobDone() {
 	}
 
 	if count >= m.maxJobs {
-		// Signal restart needed (non-blocking)
+
 		select {
 		case m.restartChan <- struct{}{}:
 		default:
@@ -93,12 +87,10 @@ func (m *ScraperManager) JobDone() {
 	}
 }
 
-// ActiveJobs returns the number of currently active scrape jobs.
 func (m *ScraperManager) ActiveJobs() int64 {
 	return int64(m.centralWriter.TrackedJobs())
 }
 
-// SubmitJob submits a job to the current provider.
 func (m *ScraperManager) SubmitJob(ctx context.Context, job scrapemate.IJob) error {
 	switch j := job.(type) {
 	case *gmaps.GmapJob:
@@ -128,23 +120,104 @@ func (m *ScraperManager) SubmitJob(ctx context.Context, job scrapemate.IJob) err
 	}
 }
 
-// RegisterJob delegates to CentralWriter.
-func (m *ScraperManager) RegisterJob(jobID string, riverJobID int64, keyword string) <-chan FlushResult {
+func (m *ScraperManager) RegisterJob(jobID string, riverJobID int64, keyword string) <-chan domain.FlushResult {
 	return m.centralWriter.RegisterJob(jobID, riverJobID, keyword)
 }
 
-// MarkDone delegates to CentralWriter.
+func (m *ScraperManager) Register(job domain.ScrapeJob) <-chan domain.FlushResult {
+	return m.RegisterJob(strconv.FormatInt(job.ID, 10), job.ID, job.Params.Keyword)
+}
+
+func (m *ScraperManager) Submit(ctx context.Context, job domain.ScrapeJob) (func(), error) {
+	jobID := strconv.FormatInt(job.ID, 10)
+
+	exitMon := exiter.New()
+	exitMon.SetSeedCount(1)
+	exitMon.SetCancelFunc(func() { m.MarkDone(jobID) })
+
+	if err := m.SubmitJob(ctx, buildScrapeJob(jobID, job.Params, exitMon)); err != nil {
+		return nil, err
+	}
+
+	exitCtx, exitCancel := context.WithCancel(ctx)
+
+	go exitMon.Run(exitCtx)
+
+	return exitCancel, nil
+}
+
+func buildScrapeJob(jobID string, params domain.ScrapeParams, exitMon exiter.Exiter) scrapemate.IJob {
+	if params.FastMode {
+		searchParams := &gmaps.MapSearchParams{
+			Query: params.Keyword,
+			Hl:    params.Lang,
+		}
+
+		if params.GeoCoordinates != "" {
+			lat, lon := parseGeoCoordinates(params.GeoCoordinates)
+			searchParams.Location = gmaps.MapLocation{
+				Lat:     lat,
+				Lon:     lon,
+				ZoomLvl: float64(params.Zoom),
+				Radius:  params.Radius,
+			}
+		}
+
+		searchJob := gmaps.NewSearchJob(searchParams,
+			gmaps.WithSearchJobExitMonitor(exitMon),
+			gmaps.WithSearchJobWriterManagedCompletion(),
+		)
+		searchJob.ID = jobID
+
+		return searchJob
+	}
+
+	maxDepth := params.MaxDepth
+	if maxDepth == 0 {
+		maxDepth = 10
+	}
+
+	opts := []gmaps.GmapJobOptions{
+		gmaps.WithExitMonitor(exitMon),
+		gmaps.WithWriterManagedCompletion(),
+	}
+
+	if params.ExtraReviews {
+		opts = append(opts, gmaps.WithExtraReviews())
+	}
+
+	return gmaps.NewGmapJob(
+		jobID,
+		params.Lang,
+		params.Keyword,
+		maxDepth,
+		params.Email,
+		params.GeoCoordinates,
+		params.Zoom,
+		opts...,
+	)
+}
+
+func parseGeoCoordinates(coords string) (lat, lon float64) {
+	parts := strings.Split(coords, ",")
+	if len(parts) != 2 {
+		return 0, 0
+	}
+
+	lat, _ = strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lon, _ = strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+
+	return lat, lon
+}
+
 func (m *ScraperManager) MarkDone(jobID string) {
 	m.centralWriter.MarkDone(jobID)
 }
 
-// ForceFlush delegates to CentralWriter.
-func (m *ScraperManager) ForceFlush(jobID string) {
-	m.centralWriter.ForceFlush(jobID)
+func (m *ScraperManager) ForceFlush(job domain.ScrapeJob) {
+	m.centralWriter.ForceFlush(strconv.FormatInt(job.ID, 10))
 }
 
-// Run starts the scraper manager loop. It creates a new scraper, runs it until
-// the job threshold is reached, then restarts.
 func (m *ScraperManager) Run(ctx context.Context) error {
 	for {
 		select {
@@ -166,13 +239,11 @@ func (m *ScraperManager) Run(ctx context.Context) error {
 func (m *ScraperManager) runCycle(ctx context.Context) error {
 	provider := NewProvider(m.concurrency * 64)
 
-	// Update references atomically
 	m.mu.Lock()
 	m.provider = provider
 	m.jobCount.Store(0)
 	m.mu.Unlock()
 
-	// Create scraper app
 	app, err := m.createApp(provider)
 	if err != nil {
 		return err
@@ -180,11 +251,9 @@ func (m *ScraperManager) runCycle(ctx context.Context) error {
 
 	defer func() { _ = app.Close() }()
 
-	// Create cycle context
 	cycleCtx, cycleCancel := context.WithCancel(ctx)
 	defer cycleCancel()
 
-	// Start scraper in goroutine with panic recovery
 	scraperDone := make(chan error, 1)
 
 	go func() {
@@ -199,7 +268,6 @@ func (m *ScraperManager) runCycle(ctx context.Context) error {
 
 	log.Info("scraper cycle started", "max_jobs", m.maxJobs)
 
-	// Wait for restart signal, scraper done, or context cancelled
 	select {
 	case <-ctx.Done():
 		cycleCancel()
@@ -211,7 +279,7 @@ func (m *ScraperManager) runCycle(ctx context.Context) error {
 		return nil
 
 	case err := <-scraperDone:
-		// Scraper exited unexpectedly
+
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -243,7 +311,6 @@ func (m *ScraperManager) createApp(provider *Provider) (*scrapemateapp.Scrapemat
 		scrapemateapp.WithProvider(provider),
 	)
 
-	// Add proxy support if proxies are configured
 	if len(m.proxies) > 0 {
 		opts = append(opts, scrapemateapp.WithProxies(m.proxies))
 		log.Info("proxies configured", "count", len(m.proxies))
@@ -269,3 +336,5 @@ func (m *ScraperManager) createApp(provider *Provider) (*scrapemateapp.Scrapemat
 
 	return scrapemateapp.NewScrapeMateApp(cfg)
 }
+
+var _ domain.Scraper = (*ScraperManager)(nil)

@@ -11,7 +11,7 @@ import (
 	"github.com/gosom/scrapemate"
 	"github.com/mcnijman/go-emailaddress"
 
-	"github.com/OBrunoW/gmaps-scraper/exiter"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps/exiter"
 )
 
 type EmailExtractJobOptions func(*EmailExtractJob)
@@ -78,7 +78,6 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 
 	log.Info("Processing email job", "url", j.URL)
 
-	// if html fetch failed just return
 	if resp.Error != nil {
 		return j.Entry, nil, nil
 	}
@@ -150,13 +149,11 @@ func regexEmailExtractor(body []byte) []string {
 	return emails
 }
 
-// cleanEmail normalizes raw email candidates and reports whether the address is valid and usable.
 func cleanEmail(raw string) (string, bool) {
 	email := strings.ToLower(strings.TrimSpace(raw))
 	email = strings.Trim(email, `"'<>`)
 	email = strings.TrimSpace(email)
 
-	// Control characters indicate the match was extracted from binary or corrupted markup.
 	if strings.ContainsFunc(email, unicode.IsControl) {
 		return "", false
 	}
@@ -179,7 +176,6 @@ func cleanEmail(raw string) (string, bool) {
 	return email, true
 }
 
-// isUsableEmail rejects asset/media filenames and telemetry/tracker domains.
 func isUsableEmail(email string) bool {
 	for _, ext := range invalidEmailExtensions {
 		if strings.HasSuffix(email, ext) {
@@ -197,8 +193,6 @@ func isUsableEmail(email string) bool {
 	return true
 }
 
-// invalidEmailExtensions covers retina srcset filenames ("name@2x.ext") that
-// resemble email addresses and pass syntax validation.
 var invalidEmailExtensions = []string{
 	".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif",
 	".jfif", ".bmp", ".ico", ".tif", ".tiff", ".heic", ".heif",
@@ -211,9 +205,6 @@ var junkEmailDomainSuffixes = []string{
 	"sentry.io", "exceptions.doctolib.fr", "vk-portal.net", "wixpress.com",
 }
 
-// normalizeGoogleURL extracts the actual target URL from Google redirect URLs.
-// Google Maps sometimes returns URLs like "/url?q=http://example.com/&opi=..."
-// for external website links.
 func normalizeGoogleURL(rawURL string) string {
 	if rawURL == "" {
 		return rawURL

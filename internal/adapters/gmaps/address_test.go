@@ -41,7 +41,7 @@ func TestCompleteAddressFromPlaceArray(t *testing.T) {
 func TestParseSearchResultsCompleteAddress(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("../testdata/output.json")
+	raw, err := os.ReadFile("../../../testdata/output.json")
 	require.NoError(t, err)
 
 	entries, err := ParseSearchResults(raw)

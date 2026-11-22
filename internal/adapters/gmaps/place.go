@@ -11,7 +11,7 @@ import (
 
 	"github.com/gosom/scrapemate"
 
-	"github.com/OBrunoW/gmaps-scraper/exiter"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps/exiter"
 )
 
 type PlaceJobOptions func(*PlaceJob)
@@ -57,10 +57,6 @@ func NewPlaceJob(parentID, langCode, u string, extractEmail, extraExtraReviews b
 	return &job
 }
 
-// sanitizePlaceURL rewrites the dot-dot segment in a canonical Google Maps
-// place URL so RFC 3986 path normalization cannot remove the "/maps/place/"
-// marker. The URL is parsed only for validation; replacement operates on the
-// raw string to preserve the Maps data payload byte-for-byte.
 func sanitizePlaceURL(rawURL string) string {
 	const (
 		placeMarker     = "/maps/place/../data="
@@ -140,7 +136,6 @@ func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, [
 		entry.Link = j.GetURL()
 	}
 
-	// Handle RPC-based reviews
 	allReviewsRaw, ok := resp.Meta["reviews_raw"].(FetchReviewsResponse)
 	if ok && len(allReviewsRaw.pages) > 0 {
 		entry.AddExtraReviews(allReviewsRaw.pages)
@@ -148,7 +143,6 @@ func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, [
 		entry.UserReviewsExtended = dedupeDOMReviewsAgainstPrimary(entry.UserReviews, entry.UserReviewsExtended)
 	}
 
-	// Handle DOM-based reviews (fallback)
 	domReviews, ok := resp.Meta["dom_reviews"].([]DOMReview)
 	if ok && len(domReviews) > 0 {
 		convertedReviews := ConvertDOMReviewsToReviews(domReviews)
@@ -221,7 +215,6 @@ func (j *PlaceJob) BrowserActions(ctx context.Context, page scrapemate.BrowserPa
 
 	const defaultTimeout = 5 * time.Second
 
-	// Ignore WaitForURL errors — Google Maps may redirect slowly especially via proxy
 	_ = page.WaitForURL(page.URL(), defaultTimeout)
 
 	resp.URL = pageResponse.URL
@@ -243,7 +236,7 @@ func (j *PlaceJob) BrowserActions(ctx context.Context, page scrapemate.BrowserPa
 
 	if j.ExtractExtraReviews {
 		reviewCount := j.getReviewCount(raw)
-		if reviewCount > 0 { // download reviews for any place that has them
+		if reviewCount > 0 {
 			params := fetchReviewsParams{
 				page:        page,
 				mapURL:      page.URL(),
@@ -251,8 +244,6 @@ func (j *PlaceJob) BrowserActions(ctx context.Context, page scrapemate.BrowserPa
 				capture:     capture,
 			}
 
-			// Observe the anonymous page's own current RPC requests and keep DOM
-			// reviews when the browser does not expose a structured response.
 			rpcData, domReviews, err := FetchReviewsWithFallback(ctx, params)
 			resp.Meta["review_collection"] = rpcData.collection
 
@@ -281,19 +272,16 @@ func (j *PlaceJob) getRaw(ctx context.Context, page scrapemate.BrowserPage) (any
 		default:
 			raw, err := page.Eval(js)
 			if err != nil {
-				// Continue retrying on error
+
 				<-time.After(time.Millisecond * 200)
 				continue
 			}
 
-			// Check for valid non-null result.
-			// JS null may arrive as nil, and empty strings are not useful here.
 			if raw == nil {
 				<-time.After(time.Millisecond * 200)
 				continue
 			}
 
-			// If it's a string, make sure it's not empty
 			if str, ok := raw.(string); ok {
 				if str == "" {
 					<-time.After(time.Millisecond * 200)
@@ -316,7 +304,7 @@ func (j *PlaceJob) extractJSON(page scrapemate.BrowserPage) ([]byte, error) {
 		cancel()
 
 		if err != nil {
-			// On timeout, try reloading the page
+
 			if attempt < maxRetries-1 {
 				if reloadErr := page.Reload(scrapemate.WaitUntilDOMContentLoaded); reloadErr == nil {
 					continue

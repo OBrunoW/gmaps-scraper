@@ -6,12 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OBrunoW/gmaps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// noopSave records the entries it receives without touching a DB.
 func noopSave(dst *[]*gmaps.Entry) SaveFunc {
 	return func(_ context.Context, _ int64, _ string, entries []*gmaps.Entry) error {
 		if dst != nil {
@@ -114,7 +113,6 @@ func TestCentralWriter_DoubleFlushIdempotent(t *testing.T) {
 	cw.ForceFlush("job1")
 	<-ch
 
-	// Second call is a no-op (job already removed from map)
 	cw.ForceFlush("job1")
 
 	assert.Equal(t, 1, saveCount)
@@ -127,7 +125,6 @@ func TestCentralWriter_AddResultAfterFlush(_ *testing.T) {
 	cw.ForceFlush("job1")
 	<-ch
 
-	// Should not panic — job is gone from map, silently dropped
 	cw.AddResult("job1", &gmaps.Entry{Title: "Too Late"})
 }
 
@@ -164,7 +161,6 @@ func TestCentralWriter_EmptyFlushNoCallback(t *testing.T) {
 func TestCentralWriter_FlushUnregisteredJobIgnored(_ *testing.T) {
 	cw := NewCentralWriter(nil, noopSave(nil))
 
-	// Should not panic
 	cw.AddResult("nonexistent", &gmaps.Entry{Title: "Ghost"})
 	cw.ForceFlush("nonexistent")
 }
@@ -175,7 +171,7 @@ func TestCentralWriter_ZeroResultFlush(t *testing.T) {
 	cw := NewCentralWriter(nil, noopSave(&saved))
 
 	ch := cw.RegisterJob("job1", 100, "restaurants")
-	// No results added — simulates GmapJob error / no places found
+
 	cw.Flush("job1")
 
 	select {
@@ -200,7 +196,6 @@ func TestCentralWriter_DiscardDropsTrackedJobWithoutSave(t *testing.T) {
 	cw.AddResult("job1", &gmaps.Entry{Title: "Place A"})
 	cw.Discard("job1")
 
-	// No-op after discard and no persistence should happen.
 	cw.ForceFlush("job1")
 
 	assert.Equal(t, 0, saveCount)

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"uuid"
 
-	"github.com/OBrunoW/gmaps-scraper/exiter"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps/exiter"
 	"github.com/gosom/scrapemate"
 )
 
