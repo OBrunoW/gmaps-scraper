@@ -1,5 +1,5 @@
 development:
   dialect: postgres
-  datasource: postgres://postgres:postgres@localhost:5432/gmaps_pro?sslmode=disable
+  datasource: postgres://postgres:postgres@localhost:5432/gmaps_scraper?sslmode=disable
   dir: migrations
   table: migrations

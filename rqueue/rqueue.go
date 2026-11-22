@@ -396,43 +396,19 @@ type Client struct {
 	dbPool      *pgxpool.Pool
 }
 
-// NewClient creates a new Client for the API server.
-// It processes maintenance jobs (worker provisioning/deletion) and can insert scrape jobs.
-// encryptionKey is needed to decrypt secrets from app_config at job execution time.
-func NewClient(dbPool *pgxpool.Pool, encryptionKey []byte) (*Client, error) {
+func NewClient(dbPool *pgxpool.Pool) (*Client, error) {
 	logger := log.With("component", "river-server")
 
 	workers := river.NewWorkers()
-	// Register ScrapeWorker so Insert validates the "scrape" kind.
-	// The server never processes scrape jobs (only QueueMaintenance runs here).
 	river.AddWorker(workers, &ScrapeWorker{})
 	river.AddWorker(workers, &JobDeleteWorker{
 		dbPool: dbPool,
-	})
-	river.AddWorker(workers, &WorkerProvisionWorker{
-		dbPool:        dbPool,
-		encryptionKey: encryptionKey,
-	})
-	river.AddWorker(workers, &WorkerDeleteWorker{
-		dbPool:        dbPool,
-		encryptionKey: encryptionKey,
-	})
-	river.AddWorker(workers, &WorkerHealthCheckWorker{
-		dbPool:        dbPool,
-		encryptionKey: encryptionKey,
 	})
 	river.AddWorker(workers, &CleanupWorker{
 		dbPool: dbPool,
 	})
 
 	periodicJobs := []*river.PeriodicJob{
-		river.NewPeriodicJob(
-			river.PeriodicInterval(30*time.Second),
-			func() (river.JobArgs, *river.InsertOpts) {
-				return WorkerHealthCheckArgs{}, nil
-			},
-			&river.PeriodicJobOpts{RunOnStart: true},
-		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(1*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) {
@@ -461,10 +437,6 @@ func NewClient(dbPool *pgxpool.Pool, encryptionKey []byte) (*Client, error) {
 	}, nil
 }
 
-// NewWorkerClient creates a new Client for worker mode.
-// This client only processes scrape jobs. Maintenance jobs (worker provisioning,
-// deletion) are handled by the server's River client.
-// Worker-mode concurrency is intentionally fixed to one River worker per process.
 func NewWorkerClient(dbPool *pgxpool.Pool, manager ScrapeManager) (*Client, error) {
 	logger := log.With("component", "river-worker")
 
@@ -871,53 +843,6 @@ func (c *Client) DeleteJob(ctx context.Context, encodedJobID string) error {
 	_, err = c.riverClient.Insert(ctx, JobDeleteArgs{JobID: jobID}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to queue deletion: %w", err)
-	}
-
-	return nil
-}
-
-// InsertWorkerProvisionJob queues a background job to provision a cloud worker.
-func (c *Client) InsertWorkerProvisionJob(ctx context.Context, args WorkerProvisionArgs) error { //nolint:gocritic // hugeParam: WorkerProvisionArgs is 112 bytes but is a River job argument and must be passed by value
-	_, err := c.riverClient.Insert(ctx, args, nil)
-	if err != nil {
-		return fmt.Errorf("failed to queue worker provision: %w", err)
-	}
-
-	return nil
-}
-
-// InsertWorkerDeleteJob queues a background job to delete a cloud worker.
-// DashboardStats holds summary statistics for the admin dashboard.
-type DashboardStats struct {
-	JobsToday    int
-	TotalResults int
-}
-
-// GetDashboardStats fetches job and result counts for the dashboard.
-func (c *Client) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
-	stats := &DashboardStats{}
-
-	err := c.dbPool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM river_job WHERE kind = 'scrape' AND created_at >= CURRENT_DATE`,
-	).Scan(&stats.JobsToday)
-	if err != nil {
-		return nil, err
-	}
-
-	err = c.dbPool.QueryRow(ctx,
-		`SELECT COALESCE(SUM(result_count), 0) FROM scrape_results`,
-	).Scan(&stats.TotalResults)
-	if err != nil {
-		return nil, err
-	}
-
-	return stats, nil
-}
-
-func (c *Client) InsertWorkerDeleteJob(ctx context.Context, args WorkerDeleteArgs) error {
-	_, err := c.riverClient.Insert(ctx, args, nil)
-	if err != nil {
-		return fmt.Errorf("failed to queue worker deletion: %w", err)
 	}
 
 	return nil

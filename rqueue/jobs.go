@@ -74,3 +74,36 @@ func (w *JobDeleteWorker) Work(ctx context.Context, job *river.Job[JobDeleteArgs
 
 	return nil
 }
+
+type CleanupArgs struct{}
+
+func (CleanupArgs) Kind() string {
+	return "cleanup"
+}
+
+func (CleanupArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		Queue:       QueueMaintenance,
+		MaxAttempts: 1,
+	}
+}
+
+type CleanupWorker struct {
+	river.WorkerDefaults[CleanupArgs]
+	dbPool *pgxpool.Pool
+}
+
+func (w *CleanupWorker) Work(ctx context.Context, _ *river.Job[CleanupArgs]) error {
+	result, err := w.dbPool.Exec(ctx,
+		`DELETE FROM scrape_results WHERE job_id IN (
+			SELECT id FROM river_job WHERE state = 'completed' AND finalized_at < NOW() - INTERVAL '30 days'
+		)`)
+	if err != nil {
+		log.Error("cleanup: failed to delete old scrape results", "error", err)
+		return err
+	}
+	if result.RowsAffected() > 0 {
+		log.Info("cleanup: deleted old scrape results", "count", result.RowsAffected())
+	}
+	return nil
+}
