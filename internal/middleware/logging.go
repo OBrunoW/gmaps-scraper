@@ -1,4 +1,4 @@
-package httpext
+package middleware
 
 import (
 	"context"
@@ -7,17 +7,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
-	"github.com/OBrunoW/gmaps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/internal/log"
 )
-
-type contextKey string
 
 const requestIDKey contextKey = "request_id"
 
-// LoggingMiddleware logs HTTP requests with timing, status, and client info.
-func LoggingMiddleware(next http.Handler) http.Handler {
+func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -34,7 +31,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 			clientIP = r.RemoteAddr
 		}
 
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		ww := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
 			log.Info("request",
@@ -64,7 +61,6 @@ func setContextRequestID(ctx context.Context, value string) context.Context {
 	return context.WithValue(ctx, requestIDKey, value)
 }
 
-// RequestIDFromContext retrieves the request ID from context.
 func RequestIDFromContext(ctx context.Context) string {
 	if id, ok := ctx.Value(requestIDKey).(string); ok {
 		return id
