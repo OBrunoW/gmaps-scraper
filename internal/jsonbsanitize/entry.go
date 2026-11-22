@@ -3,17 +3,15 @@ package jsonbsanitize
 import (
 	"strings"
 
-	"github.com/gosom/google-maps-scraper/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
 )
 
-// StripNULFromEntries removes NUL bytes (\x00) from all string fields in entries.
 func StripNULFromEntries(entries []*gmaps.Entry) {
 	for _, entry := range entries {
 		StripNULFromEntry(entry)
 	}
 }
 
-// StripNULFromEntry removes NUL bytes (\x00) from all string fields in an entry.
 func StripNULFromEntry(entry *gmaps.Entry) {
 	if entry == nil {
 		return

@@ -3,22 +3,28 @@ package cmdserve
 import (
 	"context"
 	"fmt"
-	"os"
+	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v3"
 
-	"github.com/gosom/google-maps-scraper/api"
-	"github.com/gosom/google-maps-scraper/env"
-	"github.com/gosom/google-maps-scraper/httpext"
-	"github.com/gosom/google-maps-scraper/log"
-	"github.com/gosom/google-maps-scraper/migrations"
-	"github.com/gosom/google-maps-scraper/postgres"
-	"github.com/gosom/google-maps-scraper/rqueue"
-	saas "github.com/gosom/google-maps-scraper/saas"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/hashid"
+	httpadapter "github.com/OBrunoW/gmaps-scraper/internal/adapters/http"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/postgres"
+	riveradapter "github.com/OBrunoW/gmaps-scraper/internal/adapters/river"
+	"github.com/OBrunoW/gmaps-scraper/internal/application"
+	"github.com/OBrunoW/gmaps-scraper/internal/config"
+	"github.com/OBrunoW/gmaps-scraper/internal/log"
+	"github.com/OBrunoW/gmaps-scraper/internal/middleware"
+	"github.com/OBrunoW/gmaps-scraper/migrations"
+)
+
+const (
+	envDBMaxConns        = "DB_MAX_CONNS"
+	envDBMinConns        = "DB_MIN_CONNS"
+	envDBMaxConnLifetime = "DB_MAX_CONN_LIFETIME"
+	envDBMaxConnIdleTime = "DB_MAX_CONN_IDLE_TIME"
 )
 
 var Command = &cli.Command{
@@ -29,122 +35,132 @@ var Command = &cli.Command{
 			Name:    "addr",
 			Usage:   "Server listen address",
 			Value:   "",
-			Sources: cli.EnvVars(saas.EnvAddr),
+			Sources: cli.EnvVars(config.EnvAddr),
 		},
 		&cli.StringFlag{
 			Name:    "database-url",
 			Usage:   "PostgreSQL connection string",
 			Value:   "",
-			Sources: cli.EnvVars(saas.EnvDatabaseURL),
+			Sources: cli.EnvVars(config.EnvDatabaseURL),
 		},
 		&cli.IntFlag{
 			Name:    "db-max-conns",
 			Usage:   "Maximum database connections",
 			Value:   10,
-			Sources: cli.EnvVars(saas.EnvDBMaxConns),
+			Sources: cli.EnvVars(envDBMaxConns),
 		},
 		&cli.IntFlag{
 			Name:    "db-min-conns",
 			Usage:   "Minimum database connections",
 			Value:   2,
-			Sources: cli.EnvVars(saas.EnvDBMinConns),
+			Sources: cli.EnvVars(envDBMinConns),
 		},
 		&cli.DurationFlag{
 			Name:    "db-max-conn-lifetime",
 			Usage:   "Maximum connection lifetime",
 			Value:   time.Hour,
-			Sources: cli.EnvVars(saas.EnvDBMaxConnLifetime),
+			Sources: cli.EnvVars(envDBMaxConnLifetime),
 		},
 		&cli.DurationFlag{
 			Name:    "db-max-conn-idle-time",
 			Usage:   "Maximum connection idle time",
 			Value:   30 * time.Minute,
-			Sources: cli.EnvVars(saas.EnvDBMaxConnIdleTime),
+			Sources: cli.EnvVars(envDBMaxConnIdleTime),
 		},
 	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		_ = godotenv.Load()
-
-		addr := cmd.String("addr")
-		if addr == "" {
-			port := os.Getenv("PORT")
-			if port == "" {
-				port = "8080"
-			}
-			addr = ":" + port
-		}
-
-		dsn := cmd.String("database-url")
-		if dsn == "" {
-			dsn = buildDatabaseURL()
-		}
-		if dsn == "" {
-			dsn = saas.DefaultDatabaseURL
-		}
-
-		env.LogUnsetEnvs(saas.EnvDatabaseURL)
-
-		n, err := migrations.RunWithDSN(dsn)
-		if err != nil {
-			return fmt.Errorf("migrations: %w", err)
-		}
-		if n > 0 {
-			log.Info("applied migrations", "count", n)
-		}
-
-		dbPool, err := postgres.Connect(ctx, dsn,
-			postgres.WithMaxConns(int32(cmd.Int("db-max-conns"))),
-			postgres.WithMinConns(int32(cmd.Int("db-min-conns"))),
-			postgres.WithMaxConnLifetime(cmd.Duration("db-max-conn-lifetime")),
-			postgres.WithMaxConnIdleTime(cmd.Duration("db-max-conn-idle-time")),
-		)
-		if err != nil {
-			return err
-		}
-		defer dbPool.Close()
-
-		rqueueClient, err := rqueue.NewClient(dbPool)
-		if err != nil {
-			return err
-		}
-
-		if err = rqueueClient.Start(ctx); err != nil {
-			return err
-		}
-
-		auth := api.AuthFromEnv()
-		apiState := api.NewAppState(rqueueClient, auth)
-
-		mainRouter := chi.NewRouter()
-		mainRouter.Use(middleware.Recoverer)
-		api.Routes(mainRouter, apiState)
-
-		srv, err := httpext.New(mainRouter, httpext.WithAddr(addr))
-		if err != nil {
-			return err
-		}
-
-		log.Info("starting server", "addr", addr)
-
-		return srv.Run(ctx)
-	},
+	Action: run,
 }
 
-func buildDatabaseURL() string {
-	host := os.Getenv("DB_HOST")
-	if host == "" {
-		return ""
+func run(ctx context.Context, cmd *cli.Command) error {
+	_ = godotenv.Load()
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
 	}
-	port := os.Getenv("DB_PORT")
-	if port == "" {
-		port = "5432"
+
+	if err = cfg.ValidateAuth(); err != nil {
+		return err
 	}
-	user := os.Getenv("DB_USER")
-	pass := os.Getenv("DB_PASSWORD")
-	name := os.Getenv("DB_NAME")
-	ssl := os.Getenv("DB_SSLMODE")
-	if ssl == "" {
-		ssl = "disable"
+
+	addr := cmd.String("addr")
+	if addr == "" {
+		addr = cfg.Addr
 	}
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", user, pass, host, port, name, ssl)
+
+	dsn := cmd.String("database-url")
+	if dsn == "" {
+		dsn = cfg.DatabaseURL
+	}
+
+	logUnsetEnvs(config.EnvDatabaseURL)
+
+	applied, err := migrations.RunWithDSN(dsn)
+	if err != nil {
+		return fmt.Errorf("migrations: %w", err)
+	}
+	if applied > 0 {
+		log.Info("applied migrations", "count", applied)
+	}
+
+	dbPool, err := postgres.Connect(ctx, dsn,
+		postgres.WithMaxConns(int32(cmd.Int("db-max-conns"))),
+		postgres.WithMinConns(int32(cmd.Int("db-min-conns"))),
+		postgres.WithMaxConnLifetime(cmd.Duration("db-max-conn-lifetime")),
+		postgres.WithMaxConnIdleTime(cmd.Duration("db-max-conn-idle-time")),
+	)
+	if err != nil {
+		return err
+	}
+	defer dbPool.Close()
+
+	codec, err := hashid.NewCodec(cfg.HashIDSalt)
+	if err != nil {
+		return err
+	}
+
+	riverClient, err := riveradapter.NewClient(dbPool)
+	if err != nil {
+		return err
+	}
+
+	jobService := application.NewJobService(
+		riverClient.Queue(),
+		postgres.NewResultRepository(dbPool),
+		postgres.NewJobRepository(dbPool),
+		codec,
+	)
+	riverClient.SetMaintenance(jobService)
+
+	if err = riverClient.Start(ctx); err != nil {
+		return err
+	}
+
+	srv, err := httpadapter.New(
+		httpadapter.NewRouter(jobService, authMiddleware(cfg)),
+		httpadapter.WithAddr(addr),
+	)
+	if err != nil {
+		return err
+	}
+
+	log.Info("starting server", "addr", addr)
+
+	return srv.Run(ctx)
+}
+
+func authMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+	if cfg.AllowNoopAuth() {
+		return middleware.NoopAuth
+	}
+
+	return middleware.NewServiceAuth(cfg.ServiceKeys, cfg.APIKey).Handler
+}
+
+func logUnsetEnvs(names ...string) {
+	for _, name := range names {
+		if !config.IsEnvSet(name) {
+			log.Warn(fmt.Sprintf("environment variable %s is not set. This can be insecure and hould be used only for testing", name))
+		}
+	}
 }

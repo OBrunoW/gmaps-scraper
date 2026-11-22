@@ -3,8 +3,8 @@ package jsonbsanitize_test
 import (
 	"testing"
 
-	"github.com/gosom/google-maps-scraper/gmaps"
-	"github.com/gosom/google-maps-scraper/internal/jsonbsanitize"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/gmaps"
+	"github.com/OBrunoW/gmaps-scraper/internal/jsonbsanitize"
 	"github.com/stretchr/testify/require"
 )
 
