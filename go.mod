@@ -3,11 +3,11 @@ module github.com/OBrunoW/gmaps-scraper
 go 1.27.4
 
 require (
-	github.com/PuerkitoBio/goquery v1.12.0
-	github.com/go-chi/chi/v5 v5.3.0
-	github.com/google/open-location-code/go v0.0.0-20250415120251-fa6d7f9d4765
+	github.com/PuerkitoBio/goquery v1.14.0
+	github.com/go-chi/chi/v5 v5.5.0
+	github.com/google/open-location-code/go v0.0.0-20250620134813-83986da0156b
 	github.com/gosom/scrapemate v1.4.1
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/mcnijman/go-emailaddress v1.1.1
 	github.com/mxschmitt/playwright-go v0.6100.0
@@ -56,7 +56,7 @@ require (
 	github.com/alingse/asasalint v0.0.11 // indirect
 	github.com/alingse/nilnesserr v0.2.0 // indirect
 	github.com/andybalholm/brotli v1.2.7 // indirect
-	github.com/andybalholm/cascadia v1.3.3 // indirect
+	github.com/andybalholm/cascadia v1.3.5 // indirect
 	github.com/ashanbrown/forbidigo/v2 v2.3.1 // indirect
 	github.com/ashanbrown/makezero/v2 v2.2.1 // indirect
 	github.com/bdandy/go-errors v1.2.2 // indirect
@@ -149,7 +149,7 @@ require (
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/jgautheron/goconst v1.11.0 // indirect
 	github.com/jjti/go-spancheck v0.6.5 // indirect
 	github.com/julz/importas v0.2.0 // indirect
