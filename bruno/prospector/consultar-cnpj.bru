@@ -1,0 +1,159 @@
+meta {
+  name: Consultar CNPJ
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/prospector/cnpj/{{cnpj}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Service-Key: {{serviceKey}}
+}
+
+docs {
+  ## Objetivo
+  
+  Consulta o cadastro de um CNPJ na API Brasil e devolve os dados principais da empresa. Use para enriquecer um lead com razão social, atividades, endereços, contatos e sócios.
+  
+  ## Parâmetros
+  
+  | Nome | Tipo | Obrigatório | Default | Descrição |
+  |---|---|---|---|---|
+  | `cnpj` | string (path) | sim | nenhum | 14 dígitos; caracteres não numéricos (pontos, barra, traço) são removidos |
+  
+  ## Validações Técnicas
+  
+  - Após remover não dígitos, o CNPJ deve ter 14 dígitos, não pode ter todos os dígitos iguais e os dois dígitos verificadores devem bater; senão 400 `INVALID_CNPJ`. A validação ocorre antes de qualquer chamada externa.
+  - Autenticação S2S obrigatória.
+  
+  ## Regras de Negócio
+  
+  - A consulta é feita na API Brasil, cobrada por consulta (R$ 0,79 conforme o plano do módulo). Para testes sem cobrança, suba o serviço com `APIBRASIL_HOMOLOG=true`.
+  - CNPJ que a API Brasil rejeita como inválido: 400 `INVALID_CNPJ`.
+  - Qualquer outra falha da API Brasil (erro com HTTP 200, saldo, limite, 5xx, JSON inválido): 502 `UPSTREAM_UNAVAILABLE`.
+  - Sem `APIBRASIL_TOKEN` configurado: 503 `SERVICE_NOT_CONFIGURED`.
+  - As listas (`secondary_activities`, `addresses`, `phones`, `emails`, `partners`) nunca são `null`; vêm `[]` quando vazias.
+  
+  ## Erros Possíveis
+  
+  | Status | Code | Quando |
+  |---|---|---|
+  | 400 | `INVALID_CNPJ` | CNPJ com tamanho ou dígitos verificadores inválidos |
+  | 401 | sem code | credencial ausente ou inválida |
+  | 502 | `UPSTREAM_UNAVAILABLE` | falha da API Brasil |
+  | 503 | `SERVICE_NOT_CONFIGURED` | API Brasil sem token |
+  
+  ## Respostas
+  
+  200 OK
+  
+  Campos: `cnpj`, `legal_name`, `trade_name`, `registration_status`, `legal_nature`, `size`, `main_activity` (objeto com `code` e `description`), `secondary_activities` (lista de `code` e `description`), `addresses` (lista de `street`, `number`, `complement`, `neighborhood`, `cep`, `city`, `state`), `phones` (lista de `number`, `type`, `whatsapp`), `emails` (lista de strings) e `partners` (lista de `name`, `role`, `document`, `start_date`). Os valores abaixo são fictícios.
+  
+  ```json
+  {
+    "cnpj": "11222333000181",
+    "legal_name": "Padaria Exemplo Ltda",
+    "trade_name": "Padaria Exemplo",
+    "registration_status": "Ativa",
+    "legal_nature": "Sociedade Empresária Limitada",
+    "size": "Microempresa",
+    "main_activity": {
+      "code": "1091101",
+      "description": "Fabricação de produtos de panificação industrial"
+    },
+    "secondary_activities": [
+      {
+        "code": "4721102",
+        "description": "Padaria e confeitaria com predominância de revenda"
+      }
+    ],
+    "addresses": [
+      {
+        "street": "Rua XV de Novembro",
+        "number": "100",
+        "complement": "Sala 1",
+        "neighborhood": "Centro",
+        "cep": "80010000",
+        "city": "Curitiba",
+        "state": "PR"
+      }
+    ],
+    "phones": [
+      {
+        "number": "4133334444",
+        "type": "fixo",
+        "whatsapp": false
+      }
+    ],
+    "emails": ["contato@padariaexemplo.com.br"],
+    "partners": [
+      {
+        "name": "Maria da Silva",
+        "role": "Sócio-Administrador",
+        "document": "***123456**",
+        "start_date": "2015-03-10"
+      }
+    ]
+  }
+  ```
+  
+  400 INVALID_CNPJ
+  
+  ```json
+  {
+    "message": "CNPJ invalido",
+    "code": "INVALID_CNPJ"
+  }
+  ```
+  
+  401 Unauthorized
+  
+  ```json
+  {"error":"unauthorized"}
+  ```
+  
+  502 UPSTREAM_UNAVAILABLE
+  
+  ```json
+  {
+    "message": "Servico de consulta indisponivel",
+    "code": "UPSTREAM_UNAVAILABLE"
+  }
+  ```
+  
+  503 SERVICE_NOT_CONFIGURED
+  
+  ```json
+  {
+    "message": "API Brasil nao configurada",
+    "code": "SERVICE_NOT_CONFIGURED"
+  }
+  ```
+  
+  ## Adicionais
+  
+  - Sem cache: cada chamada é uma consulta cobrada na API Brasil.
+  - Leitura apenas, sem efeito colateral no serviço.
+  - Os formatos de `type`, `role` e `start_date` dependem do que a API Brasil devolve e são repassados como texto; os exemplos são ilustrativos.
+}
+
+tests {
+  test("status 200", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("shape do CNPJ", function () {
+    const body = res.getBody();
+    ["cnpj", "legal_name", "trade_name", "registration_status", "legal_nature", "size", "main_activity"].forEach(function (field) {
+      expect(body).to.have.property(field);
+    });
+    expect(body.main_activity).to.have.property("code");
+    expect(body.main_activity).to.have.property("description");
+    ["secondary_activities", "addresses", "phones", "emails", "partners"].forEach(function (field) {
+      expect(body[field]).to.be.an("array");
+    });
+  });
+}

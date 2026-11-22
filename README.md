@@ -54,6 +54,10 @@ docker compose up -d --build
 | `PROXIES` | proxies do worker (CSV) |
 | `FAST_MODE` | scrape HTTP stealth |
 | `HASHID_SALT` | salt do `job_id` público. Lido depois do `.env`: em dev local, trocar o salt muda os `job_id` já emitidos |
+| `PROSPECTOR_GEOCODER_URL` | geocodificador do prospector (padrão `https://nominatim.openstreetmap.org`) |
+| `APIBRASIL_TOKEN` | segredo da API Brasil. Obrigatório para CEP e CNPJ; sem ele respondem `503` |
+| `APIBRASIL_BASE_URL` | URL base da API Brasil (padrão `https://gateway.apibrasil.io/api/v2`) |
+| `APIBRASIL_HOMOLOG` | `true` usa homologação e não cobra (padrão `false`) |
 
 ## Banco
 
@@ -75,6 +79,48 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/scrape \
   -H 'X-Service-Key: changeme' \
   -d '{"keyword":"cafes in athens","max_depth":1}'
 ```
+
+## Prospector
+
+| Endpoint | Uso |
+|----------|-----|
+| `POST /api/v1/prospector/jobs` | cria o job de busca de leads (responde `202` com `job_id`) |
+| `GET /api/v1/prospector/jobs/{job_id}` | status, `result_count`, `error` e `leads` (só quando `completed`) |
+| `GET /api/v1/prospector/cep/{cep}` | logradouro, bairro, cidade, UF, latitude e longitude |
+| `GET /api/v1/prospector/cnpj/{cnpj}` | cadastro do CNPJ |
+
+Auth igual ao scrape (`X-Service-Key` ou `X-Api-Key`).
+
+Localização do `POST`:
+
+| Forma | Regra |
+|-------|-------|
+| `cep` | prioridade sobre as outras; centro vem da API Brasil |
+| `address` + `uf` | UF obrigatória quando há endereço |
+| `city` + `uf` | cidade e UF |
+
+`radius_km`: padrão `5`, de `1` a `50`.
+
+CEP e CNPJ precisam de `APIBRASIL_TOKEN`; sem ele respondem `503`.
+
+| Consulta | Custo |
+|----------|-------|
+| CEP | R$ 0,04 |
+| CNPJ | R$ 0,79 |
+
+A API Brasil cobra a cada consulta. Com `APIBRASIL_HOMOLOG=true` não há cobrança.
+
+## Páginas de teste
+
+Servidas pelo próprio serviço em `/tools/` (mesma origem, sem CORS):
+
+| Página | Uso |
+|--------|-----|
+| `/tools/scrape.html` | scrape |
+| `/tools/prospector.html` | prospector, CEP e CNPJ |
+| `/tools/lead-learning.html` | placeholder |
+
+As páginas guardam a URL e a chave no `localStorage` do navegador. Não use a chave de produção nelas.
 
 ## Git
 

@@ -1,0 +1,45 @@
+docs {
+  ## Descrição e Objetivo
+  
+  Collection do microserviço gmaps-scraper (API e worker de scrape do Google Maps). Esta versão documenta o módulo prospector: criação de job de busca de leads por palavra-chave e localização, consulta do job com leads normalizados, consulta de CEP e consulta de CNPJ.
+  
+  ## Tecnologias
+  
+  | Item | Detalhe |
+  |---|---|
+  | Servidor | Go com chi |
+  | Fila | River sobre Postgres |
+  | Geocodificação | Nominatim (cidade, UF e endereço) |
+  | CEP e CNPJ | API Brasil, com token configurado no servidor |
+  
+  ## Autenticação
+  
+  Todas as rotas do prospector exigem autenticação service-to-service. Envie `X-Service-Key` com uma chave de `SERVICE_KEYS`, ou `X-Api-Key` com o valor de `API_KEY`. Também é aceito `Authorization: Bearer <API_KEY>`. Sem credencial válida a resposta é 401 com corpo `{"error":"unauthorized"}`. Nos requests desta collection o header `X-Service-Key` usa `{{serviceKey}}`.
+  
+  ## Variáveis
+  
+  | Variável | Uso |
+  |---|---|
+  | `baseUrl` | URL base do serviço, ex.: `http://localhost:8080` |
+  | `serviceKey` | chave S2S, definida como secret no environment (nunca versionada) |
+  | `jobId` | preenchida automaticamente pelo request de criação de job |
+  | `cep` | CEP de exemplo, 8 dígitos |
+  | `cnpj` | CNPJ de exemplo, 14 dígitos, com dígitos verificadores válidos |
+  
+  ## Estrutura
+  
+  | Pasta | Conteúdo |
+  |---|---|
+  | `prospector` | criação e consulta de job, consulta de CEP e de CNPJ |
+  | `environments` | ambiente `local` (ignorado pelo git) |
+  
+  ## Automação
+  
+  Cada request tem `tests {}` que valida o contrato (status e shape do corpo). O request de criação de job grava `jobId` para o request de consulta do job. Rode a collection apenas no ambiente `local` ou em dev, nunca em produção. As consultas de CEP e CNPJ chamam a API Brasil; para não gerar cobrança em teste, suba o serviço com `APIBRASIL_HOMOLOG=true`.
+  
+  ## Padronização
+  
+  - JSON em `snake_case`.
+  - Erros do prospector no formato `{"message": "...", "code": "..."}`.
+  - Respostas de sucesso são o payload direto, sem envelope `success`.
+}

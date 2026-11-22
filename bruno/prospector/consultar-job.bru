@@ -1,0 +1,159 @@
+meta {
+  name: Consultar job
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/prospector/jobs/{{jobId}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Service-Key: {{serviceKey}}
+}
+
+docs {
+  ## Objetivo
+  
+  Consulta o andamento de um job e, quando ele termina, devolve os leads normalizados. Use em polling até `status` ser `completed` ou `failed`.
+  
+  ## Parâmetros
+  
+  | Nome | Tipo | Obrigatório | Default | Descrição |
+  |---|---|---|---|---|
+  | `job_id` | string (path) | sim | nenhum | identificador público devolvido por "Criar job" |
+  
+  ## Enums
+  
+  | `status` | Significado |
+  |---|---|
+  | `pending` | job criado e aguardando o worker |
+  | `running` | worker processando o scrape |
+  | `completed` | scrape terminado; `leads` presente |
+  | `failed` | scrape falhou; `error` descreve o motivo |
+  
+  ## Validações Técnicas
+  
+  - `job_id` desconhecido ou inválido: 404 `NOT_FOUND`.
+  - Autenticação S2S obrigatória.
+  
+  ## Regras de Negócio
+  
+  - A rota aceita qualquer job de scrape, inclusive os criados em `/api/v1/scrape`. Nada além do job é persistido, então não há `city` nem `radius_km` na resposta e `keyword` é a do scrape (`"<keyword> em <city>"`).
+  - `leads` só aparece quando `status` é `completed`; sem resultados é `[]`. Nos demais status o campo é omitido.
+  - `error` é `null` quando não há erro.
+  - Cada lead é normalizado a partir do resultado do Google Maps. `key` é `place:<place_id>`, senão `cid:<cid>`, senão `link:<link>`. Campos de texto, coordenadas e `maps_url` ausentes vêm como `null`.
+  - Falha ao ler os resultados do job responde 500 `INTERNAL_ERROR`.
+  
+  ## Erros Possíveis
+  
+  | Status | Code | Quando |
+  |---|---|---|
+  | 401 | sem code | credencial ausente ou inválida |
+  | 404 | `NOT_FOUND` | job não existe |
+  | 500 | `INTERNAL_ERROR` | resultados do job ilegíveis ou falha inesperada |
+  
+  ## Respostas
+  
+  200 OK com status completed
+  
+  ```json
+  {
+    "job_id": "kYzR8xLmNpQvWjX3",
+    "status": "completed",
+    "keyword": "padarias em Curitiba",
+    "result_count": 1,
+    "error": null,
+    "leads": [
+      {
+        "key": "place:ChIJabc123",
+        "title": "Padaria Exemplo",
+        "phone": "(41) 3333-4444",
+        "website": "https://padariaexemplo.com.br",
+        "address": "Rua XV de Novembro, 100, Centro",
+        "city": "Curitiba",
+        "state": "PR",
+        "lat": -25.4284,
+        "lng": -49.2733,
+        "category": "Padaria",
+        "maps_url": "https://www.google.com/maps/place/?q=place_id:ChIJabc123"
+      }
+    ]
+  }
+  ```
+  
+  200 OK com status pending ou running
+  
+  ```json
+  {
+    "job_id": "kYzR8xLmNpQvWjX3",
+    "status": "running",
+    "keyword": "padarias em Curitiba",
+    "result_count": 0,
+    "error": null
+  }
+  ```
+  
+  200 OK com status failed
+  
+  ```json
+  {
+    "job_id": "kYzR8xLmNpQvWjX3",
+    "status": "failed",
+    "keyword": "padarias em Curitiba",
+    "result_count": 0,
+    "error": "mensagem do erro do scrape"
+  }
+  ```
+  
+  401 Unauthorized
+  
+  ```json
+  {"error":"unauthorized"}
+  ```
+  
+  404 NOT_FOUND
+  
+  ```json
+  {
+    "message": "job not found",
+    "code": "NOT_FOUND"
+  }
+  ```
+  
+  ## Adicionais
+  
+  - Leitura apenas, sem efeito colateral.
+  - O corpo de `completed` pode ser grande; consulte com intervalo de polling razoável.
+  - Este request usa `{{jobId}}` gravado por "Criar job"; rode-o antes.
+}
+
+tests {
+  test("status 200", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("shape do job", function () {
+    const body = res.getBody();
+    expect(body).to.have.property("job_id");
+    expect(body.status).to.be.oneOf(["pending", "running", "completed", "failed"]);
+    expect(body).to.have.property("keyword");
+    expect(body.result_count).to.be.a("number");
+    expect(body).to.have.property("error");
+  });
+  test("leads so quando completed", function () {
+    const body = res.getBody();
+    if (body.status !== "completed") {
+      expect(body).to.not.have.property("leads");
+      return;
+    }
+    expect(body.leads).to.be.an("array");
+    body.leads.forEach(function (lead) {
+      ["key", "title", "phone", "website", "address", "city", "state", "lat", "lng", "category", "maps_url"].forEach(function (field) {
+        expect(lead).to.have.property(field);
+      });
+      expect(lead.key).to.match(/^(place|cid|link):/);
+    });
+  });
+}

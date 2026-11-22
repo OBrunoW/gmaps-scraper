@@ -1,0 +1,188 @@
+meta {
+  name: Criar job
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/prospector/jobs
+  body: json
+  auth: none
+}
+
+headers {
+  X-Service-Key: {{serviceKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "keyword": "padarias",
+    "city": "Curitiba",
+    "uf": "PR",
+    "address": {
+      "street": "Rua XV de Novembro",
+      "number": "100",
+      "neighborhood": "Centro"
+    },
+    "cep": "80010000",
+    "radius_km": 5
+  }
+}
+
+vars:post-response {
+  jobId: res.body.job_id
+}
+
+docs {
+  ## Objetivo
+  
+  Cria um job de busca de leads. O serviço resolve o centro geográfico da busca, monta o scrape do Google Maps com o raio informado e responde 202 com o `job_id` para acompanhamento em `GET /api/v1/prospector/jobs/{job_id}`.
+  
+  O body de exemplo envia todos os campos de localização ao mesmo tempo apenas para ilustrar o formato. Como `cep` tem prioridade, `city`, `uf` e `address` são ignorados nesse exemplo. Para buscar por cidade ou endereço, remova `cep`.
+  
+  ## Campos do Body
+  
+  | Campo | Tipo | Obrigatório | Formato | Descrição |
+  |---|---|---|---|---|
+  | `keyword` | string | sim | 2 a 120 caracteres | termo buscado, ex.: `padarias` |
+  | `city` | string | sim, se não houver `cep` | 2 a 80 caracteres | cidade da busca |
+  | `uf` | string | sim quando `address` é informado | 2 letras (aceita minúsculas, convertidas para maiúsculas) | estado |
+  | `address` | objeto | não | ver abaixo | endereço usado como centro da busca |
+  | `address.street` | string | sim, para `address` valer | até 120 caracteres | logradouro |
+  | `address.number` | string | não | até 20 caracteres | número |
+  | `address.neighborhood` | string | não | até 80 caracteres | bairro |
+  | `cep` | string | não | 8 dígitos | tem prioridade sobre `city`, `uf` e `address` |
+  | `radius_km` | número | não | padrão 5, de 1 a 50 | raio da busca em km |
+  
+  ## Validações Técnicas
+  
+  - `keyword`, `city`, `uf`, `cep` e `address.*` passam por trim de espaços.
+  - `keyword` com menos de 2 ou mais de 120 caracteres: 400 `BAD_REQUEST`.
+  - Sem `cep`, `city` com menos de 2 ou mais de 80 caracteres: 400 `BAD_REQUEST`.
+  - `uf` informada que não tenha exatamente 2 letras: 400 `BAD_REQUEST`.
+  - `address` informado sem `uf`: 400 `BAD_REQUEST` com a mensagem "uf e obrigatoria quando address e informado".
+  - `address` sem `street` (após trim) é descartado como se não tivesse sido enviado; `number` e `neighborhood` são truncados nos limites acima.
+  - `radius_km` é arredondado para inteiro e limitado entre 1 e 50; ausente vira 5. Valores fora da faixa são ajustados, não rejeitados.
+  - Com `cep` informado, a validação de `city`, `uf` e `address` é ignorada. O CEP é limpo para dígitos e deve ter 8 (senão 400 `BAD_REQUEST`).
+  - Body que não é JSON válido ou acima do limite de tamanho: 400 `BAD_REQUEST` ("invalid request body").
+  
+  ## Regras de Negócio
+  
+  - Localização, por ordem de prioridade: `cep`, depois `address` (com `city` e `uf`), depois `city` (com `uf`).
+  - `cep`: consultado na API Brasil. A cidade devolvida substitui `city` na resposta e no scrape. CEP sem latitude e longitude responde 400 `CEP_NOT_FOUND`; CEP sem cidade cadastrada responde 400 `CEP_NOT_FOUND`.
+  - `address` e `city`: geocodificados pelo Nominatim. Falha de localização vira `ADDRESS_NOT_FOUND` ou `CITY_NOT_FOUND`; indisponibilidade do geocodificador vira 502 `GEOCODER_UNAVAILABLE`.
+  - O scrape criado usa a keyword `"<keyword> em <city>"`, idioma `pt`, `max_depth` 1, zoom 14, timeout de 300 segundos, raio em metros (`radius_km` x 1000) e `fast_mode` ligado.
+  - O job nasce com status `pending`. O processamento é assíncrono pelo worker.
+  - A resposta devolve `keyword` apenas com o termo enviado e `city` com a cidade usada na busca.
+  
+  ## Erros Possíveis
+  
+  | Status | Code | Quando |
+  |---|---|---|
+  | 400 | `BAD_REQUEST` | body inválido, `keyword`, `city`, `uf` ou `cep` fora do formato, `address` sem `uf` |
+  | 400 | `CITY_NOT_FOUND` | Nominatim não encontrou a cidade |
+  | 400 | `ADDRESS_NOT_FOUND` | Nominatim não encontrou o endereço |
+  | 400 | `CEP_NOT_FOUND` | CEP inexistente, sem coordenadas ou sem cidade |
+  | 401 | sem code | credencial ausente ou inválida, corpo `{"error":"unauthorized"}` |
+  | 502 | `GEOCODER_UNAVAILABLE` | falha do Nominatim ou da API Brasil na consulta de CEP |
+  | 503 | `SERVICE_NOT_CONFIGURED` | `cep` informado e API Brasil sem token configurado |
+  | 500 | `INTERNAL_ERROR` | falha inesperada |
+  
+  ## Respostas
+  
+  202 Accepted
+  
+  ```json
+  {
+    "job_id": "kYzR8xLmNpQvWjX3",
+    "status": "pending",
+    "keyword": "padarias",
+    "city": "Curitiba",
+    "radius_km": 5
+  }
+  ```
+  
+  400 BAD_REQUEST
+  
+  ```json
+  {
+    "message": "uf e obrigatoria quando address e informado",
+    "code": "BAD_REQUEST"
+  }
+  ```
+  
+  400 CITY_NOT_FOUND
+  
+  ```json
+  {
+    "message": "Cidade nao encontrada",
+    "code": "CITY_NOT_FOUND"
+  }
+  ```
+  
+  400 ADDRESS_NOT_FOUND
+  
+  ```json
+  {
+    "message": "Endereco nao encontrado",
+    "code": "ADDRESS_NOT_FOUND"
+  }
+  ```
+  
+  400 CEP_NOT_FOUND
+  
+  ```json
+  {
+    "message": "CEP nao encontrado",
+    "code": "CEP_NOT_FOUND"
+  }
+  ```
+  
+  401 Unauthorized
+  
+  ```json
+  {"error":"unauthorized"}
+  ```
+  
+  502 GEOCODER_UNAVAILABLE
+  
+  ```json
+  {
+    "message": "Servico de geocodificacao indisponivel",
+    "code": "GEOCODER_UNAVAILABLE"
+  }
+  ```
+  
+  503 SERVICE_NOT_CONFIGURED
+  
+  ```json
+  {
+    "message": "API Brasil nao configurada",
+    "code": "SERVICE_NOT_CONFIGURED"
+  }
+  ```
+  
+  ## Adicionais
+  
+  - Não há idempotência: cada chamada cria um novo job.
+  - O request grava `jobId` com o `job_id` da resposta, usado pelo request "Consultar job".
+  - Com `cep`, o serviço consulta a API Brasil (cobrada por consulta, a menos que o servidor esteja com `APIBRASIL_HOMOLOG=true`).
+  - O `job_id` é um identificador público (hashid), não o id interno.
+}
+
+tests {
+  test("status 202", function () {
+    expect(res.getStatus()).to.equal(202);
+  });
+  test("shape do job criado", function () {
+    const body = res.getBody();
+    expect(body).to.have.property("job_id");
+    expect(body.job_id).to.be.a("string").and.not.empty;
+    expect(body.status).to.equal("pending");
+    expect(body).to.have.property("keyword");
+    expect(body).to.have.property("city");
+    expect(body.radius_km).to.be.a("number");
+    expect(body.radius_km).to.be.within(1, 50);
+  });
+}
