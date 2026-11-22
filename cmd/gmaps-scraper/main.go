@@ -9,7 +9,7 @@ import (
 
 	"github.com/OBrunoW/gmaps-scraper/cmd/gmaps-scraper/cmdserve"
 	"github.com/OBrunoW/gmaps-scraper/cmd/gmaps-scraper/cmdworker"
-	"github.com/OBrunoW/gmaps-scraper/log"
+	"github.com/OBrunoW/gmaps-scraper/internal/log"
 )
 
 func main() {

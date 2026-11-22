@@ -2,8 +2,6 @@ package cmdworker
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,24 +13,26 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v3"
 
-	"github.com/OBrunoW/gmaps-scraper/log"
-	"github.com/OBrunoW/gmaps-scraper/postgres"
-	"github.com/OBrunoW/gmaps-scraper/rqueue"
-	saas "github.com/OBrunoW/gmaps-scraper/saas"
-	"github.com/OBrunoW/gmaps-scraper/scraper"
+	httpadapter "github.com/OBrunoW/gmaps-scraper/internal/adapters/http"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/postgres"
+	riveradapter "github.com/OBrunoW/gmaps-scraper/internal/adapters/river"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/scraper"
+	"github.com/OBrunoW/gmaps-scraper/internal/application"
+	"github.com/OBrunoW/gmaps-scraper/internal/config"
+	"github.com/OBrunoW/gmaps-scraper/internal/log"
 )
 
-// workerStats tracks runtime statistics for the health endpoint.
-var workerStats struct {
-	startedAt   time.Time
-	concurrency int
-}
+const (
+	envConcurrency     = "CONCURRENCY"
+	envFastMode        = "FAST_MODE"
+	envDebug           = "DEBUG"
+	envMaxJobsPerCycle = "MAX_JOBS_PER_CYCLE"
+	envProxies         = "PROXIES"
 
-// jobsProcessed is an atomic counter for jobs processed.
-var jobsProcessed atomic.Int64
-
-// resultsCollected is an atomic counter for total results (places) scraped.
-var resultsCollected atomic.Int64
+	healthAddr  = ":8080"
+	flushGrace  = 90 * time.Second
+	stopTimeout = 10 * time.Second
+)
 
 var Command = &cli.Command{
 	Name:  "worker",
@@ -42,144 +42,188 @@ var Command = &cli.Command{
 			Name:    "database-url",
 			Usage:   "PostgreSQL connection string",
 			Value:   "",
-			Sources: cli.EnvVars(saas.EnvDatabaseURL),
+			Sources: cli.EnvVars(config.EnvDatabaseURL),
 		},
 		&cli.IntFlag{
 			Name:    "concurrency",
 			Aliases: []string{"c"},
 			Usage:   "Requested worker instances for host provisioning (each process runs one River job at a time)",
 			Value:   1,
-			Sources: cli.EnvVars(saas.EnvConcurrency),
+			Sources: cli.EnvVars(envConcurrency),
 		},
 		&cli.BoolFlag{
 			Name:    "fast",
 			Usage:   "Enable fast mode (stealth HTTP requests)",
 			Value:   false,
-			Sources: cli.EnvVars(saas.EnvFastMode),
+			Sources: cli.EnvVars(envFastMode),
 		},
 		&cli.BoolFlag{
 			Name:    "debug",
 			Usage:   "Enable debug mode (headful browser)",
 			Value:   false,
-			Sources: cli.EnvVars(saas.EnvDebug),
+			Sources: cli.EnvVars(envDebug),
 		},
 		&cli.Int64Flag{
 			Name:    "max-jobs-per-cycle",
 			Usage:   "Maximum jobs before restarting scraper",
 			Value:   100,
-			Sources: cli.EnvVars(saas.EnvMaxJobsPerCycle),
+			Sources: cli.EnvVars(envMaxJobsPerCycle),
 		},
 		&cli.StringFlag{
 			Name:    "proxies",
 			Usage:   "Comma-separated list of proxy URLs",
 			Value:   "",
-			Sources: cli.EnvVars(saas.EnvProxies),
+			Sources: cli.EnvVars(envProxies),
 		},
 	},
-	Action: func(ctx context.Context, cmd *cli.Command) error {
-		_ = godotenv.Load()
+	Action: run,
+}
 
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
+type workerStats struct {
+	startedAt        time.Time
+	concurrency      int
+	manager          *scraper.ScraperManager
+	runner           *application.ScrapeRunner
+	jobsProcessed    atomic.Int64
+	resultsCollected atomic.Int64
+}
 
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+func (s *workerStats) Uptime() time.Duration       { return time.Since(s.startedAt) }
+func (s *workerStats) JobsProcessed() int64        { return s.jobsProcessed.Load() }
+func (s *workerStats) ResultsCollected() int64     { return s.resultsCollected.Load() }
+func (s *workerStats) Concurrency() int            { return s.concurrency }
+func (s *workerStats) ActiveJobs() int64           { return s.manager.ActiveJobs() }
+func (s *workerStats) FlushWaitWarnTotal() int64   { return s.runner.Metrics().FlushWaitWarnTotal }
+func (s *workerStats) LongRuntimeWarnTotal() int64 { return s.runner.Metrics().LongRuntimeWarnTotal }
 
-		go func() {
-			<-sigChan
-			log.Info("shutdown signal received")
-			cancel()
-		}()
+func (s *workerStats) incrementJobsProcessed() {
+	s.jobsProcessed.Add(1)
+}
 
-		configuredConcurrency := max(1, cmd.Int("concurrency"))
-		concurrency := 1
+func (s *workerStats) addResultsCollected(count int) {
+	s.resultsCollected.Add(int64(count))
+}
 
-		workerStats.startedAt = time.Now()
-		workerStats.concurrency = concurrency
+func run(ctx context.Context, cmd *cli.Command) error {
+	_ = godotenv.Load()
 
-		maxRiverWorkers := 1
-		fastMode := cmd.Bool("fast")
-		debug := cmd.Bool("debug")
-		maxJobsPerCycle := cmd.Int64("max-jobs-per-cycle")
-		proxies := parseProxies(cmd.String("proxies"))
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
 
-		dsn := cmd.String("database-url")
-		if dsn == "" {
-			dsn = buildWorkerDatabaseURL()
-		}
-		if dsn == "" {
-			dsn = saas.DefaultDatabaseURL
-		}
-		dbMaxConns := int32(3)
-		dbMinConns := int32(1)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-		dbPool, err := postgres.Connect(ctx, dsn,
-			postgres.WithMaxConns(dbMaxConns),
-			postgres.WithMinConns(dbMinConns),
-		)
-		if err != nil {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Info("shutdown signal received")
+		cancel()
+	}()
+
+	configuredConcurrency := max(1, cmd.Int("concurrency"))
+	concurrency := 1
+	maxRiverWorkers := 1
+	fastMode := cmd.Bool("fast")
+	debug := cmd.Bool("debug")
+	maxJobsPerCycle := cmd.Int64("max-jobs-per-cycle")
+	proxies := parseProxies(cmd.String("proxies"))
+
+	dsn := cmd.String("database-url")
+	if dsn == "" {
+		dsn = cfg.DatabaseURL
+	}
+	dbMaxConns := int32(3)
+	dbMinConns := int32(1)
+
+	dbPool, err := postgres.Connect(ctx, dsn,
+		postgres.WithMaxConns(dbMaxConns),
+		postgres.WithMinConns(dbMinConns),
+	)
+	if err != nil {
+		return err
+	}
+	defer dbPool.Close()
+
+	log.Info("worker configuration",
+		"configured_container_instances", configuredConcurrency,
+		"scraper_concurrency", concurrency,
+		"river_max_workers", maxRiverWorkers,
+		"db_max_conns", dbMaxConns,
+		"db_min_conns", dbMinConns,
+		"fast_mode", fastMode,
+		"max_jobs_per_cycle", maxJobsPerCycle,
+		"proxy_count", len(proxies),
+	)
+
+	results := postgres.NewResultRepository(dbPool)
+	manager := scraper.NewScraperManager(results, concurrency, fastMode, debug, maxJobsPerCycle, proxies)
+	runner := application.NewScrapeRunner(manager, flushGrace)
+
+	stats := &workerStats{
+		startedAt:   time.Now(),
+		concurrency: concurrency,
+		manager:     manager,
+		runner:      runner,
+	}
+	manager.OnJobComplete = stats.incrementJobsProcessed
+	manager.CentralWriter().OnResultsSaved = stats.addResultsCollected
+
+	go runHealthServer(ctx, stats)
+
+	client, err := riveradapter.NewWorkerClient(dbPool, runner)
+	if err != nil {
+		return err
+	}
+
+	log.Info("starting River worker")
+
+	if err := client.Start(ctx); err != nil {
+		return err
+	}
+
+	client.StartRetryPromoter(ctx)
+
+	log.Info("starting scraper manager")
+
+	if err := manager.Run(ctx); err != nil {
+		if ctx.Err() != nil {
+			log.Info("scraper manager stopped due to shutdown")
+		} else {
 			return err
 		}
-		defer dbPool.Close()
+	}
 
-		log.Info("worker configuration",
-			"configured_container_instances", configuredConcurrency,
-			"scraper_concurrency", concurrency,
-			"river_max_workers", maxRiverWorkers,
-			"db_max_conns", dbMaxConns,
-			"db_min_conns", dbMinConns,
-			"fast_mode", fastMode,
-			"max_jobs_per_cycle", maxJobsPerCycle,
-			"proxy_count", len(proxies),
-		)
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), stopTimeout)
+	defer stopCancel()
 
-		// Create the scraper manager
-		manager := scraper.NewScraperManager(dbPool, concurrency, fastMode, debug, maxJobsPerCycle, proxies)
-		manager.OnJobComplete = IncrementJobsProcessed
-		manager.CentralWriter().OnResultsSaved = AddResultsCollected
+	if err := client.Stop(stopCtx); err != nil {
+		log.Error("error stopping River client", "error", err)
+	}
 
-		// Start health endpoint server
-		go runHealthServer(ctx, manager)
+	log.Info("worker shutdown complete")
 
-		// Create the River client with worker support
-		client, err := rqueue.NewWorkerClient(dbPool, manager)
-		if err != nil {
-			return err
-		}
+	return nil
+}
 
-		// Start River client to process jobs
-		log.Info("starting River worker")
+func runHealthServer(ctx context.Context, stats httpadapter.WorkerStats) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", httpadapter.NewWorkerHealthHandler(stats))
 
-		if err := client.Start(ctx); err != nil {
-			return err
-		}
+	srv, err := httpadapter.New(mux, httpadapter.WithAddr(healthAddr))
+	if err != nil {
+		log.Error("health server error", "error", err)
+		return
+	}
 
-		// Periodically promote retryable jobs for immediate retry.
-		client.StartRetryPromoter(ctx)
+	log.Info("starting health server on " + healthAddr)
 
-		// Run the scraper manager (handles scraper lifecycle with restarts)
-		log.Info("starting scraper manager")
-
-		if err := manager.Run(ctx); err != nil {
-			if ctx.Err() != nil {
-				log.Info("scraper manager stopped due to shutdown")
-			} else {
-				return err
-			}
-		}
-
-		// Stop River client
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer stopCancel()
-
-		if err := client.Stop(stopCtx); err != nil {
-			log.Error("error stopping River client", "error", err)
-		}
-
-		log.Info("worker shutdown complete")
-
-		return nil
-	},
+	if err := srv.Run(ctx); err != nil {
+		log.Error("health server error", "error", err)
+	}
 }
 
 func parseProxies(val string) []string {
@@ -198,111 +242,4 @@ func parseProxies(val string) []string {
 	}
 
 	return proxies
-}
-
-func runHealthServer(ctx context.Context, manager *scraper.ScraperManager) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		uptime := time.Since(workerStats.startedAt).Truncate(time.Second)
-
-		totalResults := resultsCollected.Load()
-		uptimeMinutes := uptime.Minutes()
-
-		var resultsPerMinute float64
-
-		if uptimeMinutes > 0 {
-			resultsPerMinute = float64(totalResults) / uptimeMinutes
-		}
-
-		watchdog := rqueue.GetScrapeWatchdogMetrics()
-
-		resp := map[string]any{
-			"status":             "ok",
-			"worker":             "running",
-			"uptime":             formatDuration(uptime),
-			"jobs_processed":     jobsProcessed.Load(),
-			"results_collected":  totalResults,
-			"results_per_minute": resultsPerMinute,
-			"concurrency":        workerStats.concurrency,
-			"river_max_workers":  1,
-			"active_jobs":        manager.ActiveJobs(),
-			"watchdog": map[string]any{
-				"flush_wait_warn_total":   watchdog.FlushWaitWarnTotal,
-				"long_runtime_warn_total": watchdog.LongRuntimeWarnTotal,
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-	})
-
-	server := &http.Server{
-		Addr:              ":8080",
-		Handler:           mux,
-		ReadHeaderTimeout: 30 * time.Second,
-	}
-
-	// Shutdown server when context is cancelled
-	go func(shutdownSource context.Context) {
-		<-shutdownSource.Done()
-
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(shutdownSource), 5*time.Second)
-		defer cancel()
-
-		_ = server.Shutdown(shutdownCtx)
-	}(ctx)
-
-	log.Info("starting health server on :8080")
-
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Error("health server error", "error", err)
-	}
-}
-
-func formatDuration(d time.Duration) string {
-	days := int(d.Hours()) / 24
-	hours := int(d.Hours()) % 24
-	mins := int(d.Minutes()) % 60
-
-	if days > 0 {
-		return fmt.Sprintf("%dd %dh %dm", days, hours, mins)
-	}
-
-	if hours > 0 {
-		return fmt.Sprintf("%dh %dm", hours, mins)
-	}
-
-	return fmt.Sprintf("%dm", mins)
-}
-
-// IncrementJobsProcessed increments the jobs processed counter.
-// Called by the scraper manager after each job completes.
-func IncrementJobsProcessed() {
-	jobsProcessed.Add(1)
-}
-
-// AddResultsCollected adds to the results collected counter.
-// Called by the scraper manager after saving results.
-func AddResultsCollected(count int) {
-	resultsCollected.Add(int64(count))
-}
-
-func buildWorkerDatabaseURL() string {
-	host := os.Getenv("DB_HOST")
-	if host == "" {
-		return ""
-	}
-	port := os.Getenv("DB_PORT")
-	if port == "" {
-		port = "5432"
-	}
-	user := os.Getenv("DB_USER")
-	pass := os.Getenv("DB_PASSWORD")
-	name := os.Getenv("DB_NAME")
-	ssl := os.Getenv("DB_SSLMODE")
-	if ssl == "" {
-		ssl = "disable"
-	}
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", user, pass, host, port, name, ssl)
 }
