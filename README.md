@@ -53,6 +53,7 @@ docker compose up -d --build
 | `API_KEY` | chave estática (`X-Api-Key`) |
 | `PROXIES` | proxies do worker (CSV) |
 | `FAST_MODE` | scrape HTTP stealth |
+| `HASHID_SALT` | salt do `job_id` público. Lido depois do `.env`: em dev local, trocar o salt muda os `job_id` já emitidos |
 
 ## Banco
 
