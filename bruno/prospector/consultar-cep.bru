@@ -1,0 +1,126 @@
+meta {
+  name: Consultar CEP
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/prospector/cep/{{cep}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Service-Key: {{serviceKey}}
+}
+
+docs {
+  ## Objetivo
+  
+  Consulta um CEP na API Brasil e devolve endereço e coordenadas. Use para pré-visualizar a localização antes de criar um job com `cep`.
+  
+  ## Parâmetros
+  
+  | Nome | Tipo | Obrigatório | Default | Descrição |
+  |---|---|---|---|---|
+  | `cep` | string (path) | sim | nenhum | 8 dígitos; caracteres não numéricos são removidos antes da validação |
+  
+  ## Validações Técnicas
+  
+  - Após remover não dígitos, o CEP deve ter exatamente 8 dígitos; senão 400 `BAD_REQUEST` ("cep deve ter 8 digitos").
+  - Autenticação S2S obrigatória.
+  
+  ## Regras de Negócio
+  
+  - A consulta é feita na API Brasil, cobrada por consulta. Para testes sem cobrança, suba o serviço com `APIBRASIL_HOMOLOG=true` (a homologação é ligada por variável de ambiente do servidor, não por request).
+  - CEP inexistente na API Brasil: 400 `CEP_NOT_FOUND`.
+  - Qualquer outra falha da API Brasil (erro com HTTP 200, saldo, limite, 5xx, JSON inválido): 502 `GEOCODER_UNAVAILABLE`.
+  - `latitude` e `longitude` podem ser `null` quando a API Brasil não os informa; nesse caso a consulta ainda responde 200.
+  - Sem `APIBRASIL_TOKEN` configurado: 503 `SERVICE_NOT_CONFIGURED`.
+  
+  ## Erros Possíveis
+  
+  | Status | Code | Quando |
+  |---|---|---|
+  | 400 | `BAD_REQUEST` | CEP sem 8 dígitos |
+  | 400 | `CEP_NOT_FOUND` | CEP inexistente |
+  | 401 | sem code | credencial ausente ou inválida |
+  | 502 | `GEOCODER_UNAVAILABLE` | falha da API Brasil |
+  | 503 | `SERVICE_NOT_CONFIGURED` | API Brasil sem token |
+  
+  ## Respostas
+  
+  200 OK
+  
+  ```json
+  {
+    "cep": "80010000",
+    "street": "Rua XV de Novembro",
+    "neighborhood": "Centro",
+    "city": "Curitiba",
+    "state": "PR",
+    "latitude": -25.4284,
+    "longitude": -49.2733
+  }
+  ```
+  
+  400 BAD_REQUEST
+  
+  ```json
+  {
+    "message": "cep deve ter 8 digitos",
+    "code": "BAD_REQUEST"
+  }
+  ```
+  
+  400 CEP_NOT_FOUND
+  
+  ```json
+  {
+    "message": "CEP nao encontrado",
+    "code": "CEP_NOT_FOUND"
+  }
+  ```
+  
+  401 Unauthorized
+  
+  ```json
+  {"error":"unauthorized"}
+  ```
+  
+  502 GEOCODER_UNAVAILABLE
+  
+  ```json
+  {
+    "message": "Servico de geocodificacao indisponivel",
+    "code": "GEOCODER_UNAVAILABLE"
+  }
+  ```
+  
+  503 SERVICE_NOT_CONFIGURED
+  
+  ```json
+  {
+    "message": "API Brasil nao configurada",
+    "code": "SERVICE_NOT_CONFIGURED"
+  }
+  ```
+  
+  ## Adicionais
+  
+  - Sem cache: cada chamada é uma consulta cobrada na API Brasil.
+  - Leitura apenas, sem efeito colateral no serviço.
+}
+
+tests {
+  test("status 200", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("shape do CEP", function () {
+    const body = res.getBody();
+    ["cep", "street", "neighborhood", "city", "state", "latitude", "longitude"].forEach(function (field) {
+      expect(body).to.have.property(field);
+    });
+    expect(body.cep).to.match(/^\d{8}$/);
+  });
+}

@@ -9,6 +9,8 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v3"
 
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/apibrasil"
+	"github.com/OBrunoW/gmaps-scraper/internal/adapters/geocoder"
 	"github.com/OBrunoW/gmaps-scraper/internal/adapters/hashid"
 	httpadapter "github.com/OBrunoW/gmaps-scraper/internal/adapters/http"
 	"github.com/OBrunoW/gmaps-scraper/internal/adapters/postgres"
@@ -136,8 +138,10 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	prospectorHandlers := newProspectorHandlers(cfg, jobService)
+
 	srv, err := httpadapter.New(
-		httpadapter.NewRouter(jobService, authMiddleware(cfg)),
+		httpadapter.NewRouter(jobService, prospectorHandlers, authMiddleware(cfg)),
 		httpadapter.WithAddr(addr),
 	)
 	if err != nil {
@@ -147,6 +151,25 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	log.Info("starting server", "addr", addr)
 
 	return srv.Run(ctx)
+}
+
+func newProspectorHandlers(cfg *config.Config, jobService *application.JobService) *httpadapter.ProspectorHandlers {
+	prospector := application.NewProspectorService(jobService, geocoder.NewNominatim(cfg.GeocoderURL))
+
+	if !cfg.HasAPIBrasil() {
+		log.Warn(fmt.Sprintf("environment variable %s is not set. CEP and CNPJ endpoints will respond 503", config.EnvAPIBrasilToken))
+		return httpadapter.NewProspectorHandlers(prospector, nil, nil)
+	}
+
+	client := apibrasil.NewClient(cfg.APIBrasilURL, cfg.APIBrasilToken, cfg.APIBrasilHomolog)
+
+	cepService := application.NewCEPService(client)
+
+	return httpadapter.NewProspectorHandlers(
+		prospector.WithCEPResolver(cepService),
+		cepService,
+		application.NewCNPJService(client),
+	)
 }
 
 func authMiddleware(cfg *config.Config) func(http.Handler) http.Handler {

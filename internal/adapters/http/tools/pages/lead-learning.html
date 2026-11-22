@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead learning</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--text:#1c1f24;--muted:#5d6672;--border:#d5d9e0;--accent:#1a73e8;--accent-text:#fff;--danger:#c62828;--ok:#2e7d32;--code:#eef0f3}
+@media (prefers-color-scheme:dark){:root{--bg:#14161a;--panel:#1d2025;--text:#e6e8eb;--muted:#9aa3ae;--border:#343a42;--accent:#6ea8fe;--accent-text:#0b1220;--danger:#ef8a8a;--ok:#7fd48a;--code:#14161a}}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif;overflow-x:hidden}
+main{max-width:960px;margin:0 auto}
+h1{font-size:1.4rem;margin:0 0 4px}
+h2{font-size:1.05rem;margin:0 0 12px}
+nav{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+a{color:var(--accent)}
+.muted{color:var(--muted)}
+section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
+label.check{flex-direction:row;align-items:center;gap:8px;color:var(--text)}
+input,select{width:100%;min-width:0;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}
+input[type=checkbox]{width:auto}
+button{padding:8px 16px;border:0;border-radius:6px;background:var(--accent);color:var(--accent-text);font:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.actions{margin-top:12px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+pre{margin:0;padding:12px;background:var(--code);border-radius:6px;overflow:auto;max-height:360px;white-space:pre-wrap;word-break:break-word;font-size:.8rem}
+.error{color:var(--danger)}
+.ok{color:var(--ok)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top;word-break:break-word}
+ul{margin:0;padding-left:20px}
+</style>
+</head>
+<body>
+<main>
+<h1>Lead learning</h1>
+<nav>
+<a href="scrape.html">Scrape</a>
+<a href="prospector.html">Prospector</a>
+<a href="lead-learning.html">Lead learning</a>
+</nav>
+<section>
+<h2>Escopo em definição</h2>
+<p class="muted">Esta página é um espaço reservado. O escopo do lead learning ainda está em definição e nenhuma chamada é feita daqui.</p>
+</section>
+<section>
+<h2>Configuração</h2>
+<div class="grid">
+<label>URL base<input id="baseUrl" type="url" autocomplete="off"></label>
+<label>Header da chave<select id="keyHeader"><option value="X-Service-Key">X-Service-Key</option><option value="X-Api-Key">X-Api-Key</option></select></label>
+<label>Chave<input id="apiKey" type="password" autocomplete="off"></label>
+</div>
+</section>
+</main>
+<script>
+const STORAGE = { baseUrl: 'gmaps_tools_base_url', apiKey: 'gmaps_tools_key', keyHeader: 'gmaps_tools_key_header' };
+const baseUrlInput = document.getElementById('baseUrl');
+const apiKeyInput = document.getElementById('apiKey');
+const keyHeaderSelect = document.getElementById('keyHeader');
+
+function readStored(name) {
+  try {
+    return window.localStorage.getItem(name) || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function writeStored(name, value) {
+  try {
+    window.localStorage.setItem(name, value);
+  } catch (error) {
+    return;
+  }
+}
+
+function loadConfig() {
+  baseUrlInput.value = readStored(STORAGE.baseUrl) || window.location.origin;
+  apiKeyInput.value = readStored(STORAGE.apiKey);
+  const header = readStored(STORAGE.keyHeader);
+  if (header) keyHeaderSelect.value = header;
+}
+
+function saveConfig() {
+  writeStored(STORAGE.baseUrl, baseUrlInput.value.trim());
+  writeStored(STORAGE.apiKey, apiKeyInput.value);
+  writeStored(STORAGE.keyHeader, keyHeaderSelect.value);
+}
+
+function apiUrl(path) {
+  return baseUrlInput.value.trim().replace(/\/+$/, '') + path;
+}
+
+function authHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  headers[keyHeaderSelect.value] = apiKeyInput.value;
+  return headers;
+}
+
+function hasConfig() {
+  return baseUrlInput.value.trim() !== '' && apiKeyInput.value !== '';
+}
+
+function bindConfig(onChange) {
+  loadConfig();
+  [baseUrlInput, apiKeyInput, keyHeaderSelect].forEach(function (element) {
+    element.addEventListener('input', function () {
+      saveConfig();
+      onChange();
+    });
+  });
+  onChange();
+}
+
+bindConfig(function () {});
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+meta {
+  name: prospector
+  seq: 1
+}
+
+docs {
+  ## Objetivo
+  
+  Módulo de prospecção de leads. Cria um job de scrape no Google Maps a partir de uma palavra-chave e de uma localização (cidade e UF, endereço ou CEP), devolve os leads normalizados quando o job termina e oferece consultas auxiliares de CEP e CNPJ.
+  
+  | Método | Rota | Função |
+  |---|---|---|
+  | POST | `/api/v1/prospector/jobs` | cria o job |
+  | GET | `/api/v1/prospector/jobs/{job_id}` | status e leads |
+  | GET | `/api/v1/prospector/cep/{cep}` | consulta de CEP |
+  | GET | `/api/v1/prospector/cnpj/{cnpj}` | consulta de CNPJ |
+  
+  Todas exigem autenticação S2S (`X-Service-Key` ou `X-Api-Key`). Erros no formato `{"message", "code"}`.
+}

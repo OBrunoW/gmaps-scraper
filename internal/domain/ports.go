@@ -33,3 +33,8 @@ type Scraper interface {
 	ForceFlush(job ScrapeJob)
 	JobDone()
 }
+
+type Geocoder interface {
+	GeocodeCity(ctx context.Context, city, uf string) (GeoPoint, error)
+	GeocodeAddress(ctx context.Context, address Address, city, uf string) (GeoPoint, error)
+}
